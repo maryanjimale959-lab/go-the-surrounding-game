@@ -66,87 +66,127 @@ function clickStone() {
 /* ------------------------------------------------------------------ board */
 const canvas = $("#board");
 const ctx = canvas.getContext("2d");
+let L = null;                    // geometry of the last main-board paint
 
-function metrics() {
+/* The scene: board on a table, stone bowls and lids in the free space. */
+function scene() {
   const wrap = canvas.parentElement;
-  const px = Math.min(wrap.clientWidth - 28, 760);
-  const cell = px / (state.size + 1.1);
-  return { px, cell, pad: cell * 1.05 };
+  const availW = Math.max(260, Math.min(wrap.clientWidth - 34, 1000));
+  if (availW >= 640) {                       // desk: bowls flank the board
+    const px = Math.min(availW * 0.58, 640);
+    const W = availW, H = px * 1.12;
+    const bx = (W - px) / 2, by = (H - px) / 2;
+    const r = Math.min(bx * 0.40, px * 0.155);
+    const cxL = bx * 0.5, cxR = W - bx * 0.5;
+    return { W, H, px, bx, by, wide: true, bowls: [
+      { color: BLACK, cx: cxL, cy: by + px * 0.30, r: r },
+      { color: BLACK, cx: cxL, cy: by + px * 0.80, r: r * 0.86, lid: true },
+      { color: WHITE, cx: cxR, cy: by + px * 0.30, r: r },
+      { color: WHITE, cx: cxR, cy: by + px * 0.80, r: r * 0.86, lid: true },
+    ] };
+  }
+  const px = availW - 6;                       // phone: bowls above the board
+  const r = Math.max(15, px * 0.07);
+  const band = r * 2.6 + 10;
+  const W = availW;
+  return { W, H: px + band + 6, px, bx: (W - px) / 2, by: band, wide: false, bowls: [
+    { color: BLACK, cx: W / 2 - px * 0.23, cy: band * 0.52, r: r },
+    { color: WHITE, cx: W / 2 + px * 0.23, cy: band * 0.52, r: r },
+  ] };
 }
 
-function renderBoard(g, px, size, board, opts = {}) {
-  const cell = px / (size + 1.1), pad = cell * 1.05;
+function plainScene(px) {
+  return { W: px, H: px, px, bx: 0, by: 0, wide: false, bowls: [] };
+}
+
+function renderBoard(g, size, board, S, opts = {}) {
   const dpr = window.devicePixelRatio || 1;
+  const cell = S.px / (size + 1.1), pad = cell * 1.05;
+  const bx = S.bx, by = S.by, px = S.px;
+  const atX = (i) => bx + pad + i * cell;
+  const atY = (i) => by + pad + i * cell;
+  const span = cell * (size - 1);
 
-  // wood
-  const wood = g.createLinearGradient(0, 0, px, px);
-  wood.addColorStop(0, "#e2ad5b");
-  wood.addColorStop(0.5, "#d8a04a");
-  wood.addColorStop(1, "#c98f38");
-  g.fillStyle = wood;
-  roundRect(g, 0, 0, px, px, 14 * dpr);
-  g.fill();
-
-  // grain
-  g.save();
-  roundRect(g, 0, 0, px, px, 14 * dpr);
-  g.clip();
-  g.strokeStyle = "rgba(140, 90, 20, 0.10)";
-  for (let i = 0; i < 26; i++) {
-    g.lineWidth = (2 + (i % 3) * 2) * dpr;
-    g.beginPath();
-    const yy = (i / 26) * px;
-    g.moveTo(0, yy);
-    g.bezierCurveTo(px * 0.3, yy + 8 * dpr, px * 0.7, yy - 8 * dpr, px, yy);
-    g.stroke();
+  /* ---- the wooden board */
+  const corner = px * 0.022;
+  if (S.wide) {                       // thickness of the board against the table
+    roundRect(g, bx + px * 0.004, by + px * 0.02, px, px, corner);
+    g.fillStyle = "#a3702c"; g.fill();
   }
+  g.save();
+  g.shadowColor = "rgba(46, 24, 6, 0.5)";
+  g.shadowBlur = px * 0.045; g.shadowOffsetY = px * 0.014;
+  roundRect(g, bx, by, px, px, corner);
+  g.fillStyle = "#d8a44e"; g.fill();
   g.restore();
 
-  const at = (i) => pad + i * cell;
+  const face = g.createLinearGradient(bx, by, bx + px, by + px);
+  face.addColorStop(0, "#f7d79f");
+  face.addColorStop(0.45, "#eabf74");
+  face.addColorStop(1, "#dda955");
+  roundRect(g, bx, by, px, px, corner);
+  g.fillStyle = face; g.fill();
 
-  // grid
-  g.strokeStyle = "#4a3810";
-  g.lineWidth = Math.max(1, dpr);
+  g.save();
+  roundRect(g, bx, by, px, px, corner); g.clip();
+  g.strokeStyle = "rgba(150, 96, 26, 0.08)";
+  for (let i = 0; i < 16; i++) {
+    g.lineWidth = (1 + (i % 4) * 0.8) * dpr;
+    const yy = by + (i / 16) * px;
+    g.beginPath(); g.moveTo(bx, yy);
+    g.bezierCurveTo(bx + px * 0.3, yy + 4 * dpr, bx + px * 0.7, yy - 4 * dpr, bx + px, yy);
+    g.stroke();
+  }
+  // bevel: light along the top edge, shade along the bottom
+  const bev = g.createLinearGradient(0, by, 0, by + px);
+  bev.addColorStop(0, "rgba(255, 240, 208, 0.5)");
+  bev.addColorStop(0.1, "rgba(255, 240, 208, 0)");
+  bev.addColorStop(0.9, "rgba(120, 72, 16, 0)");
+  bev.addColorStop(1, "rgba(120, 72, 16, 0.18)");
+  roundRect(g, bx, by, px, px, corner); g.fillStyle = bev; g.fill();
+  g.restore();
+
+  g.strokeStyle = "rgba(126, 82, 22, 0.45)"; g.lineWidth = Math.max(1, dpr);
+  roundRect(g, bx + 0.5, by + 0.5, px - 1, px - 1, corner); g.stroke();
+
+  /* ---- grid */
+  g.strokeStyle = "rgba(78, 50, 10, 0.72)";
+  g.lineWidth = Math.max(1, dpr * 0.9);
   for (let i = 0; i < size; i++) {
-    line(g, at(i), at(0), at(i), at(size - 1));
-    line(g, at(0), at(i), at(size - 1), at(i));
+    line(g, atX(i), atY(0), atX(i), atY(size - 1));
+    line(g, atX(0), atY(i), atX(size - 1), atY(i));
   }
-  g.lineWidth = Math.max(1.6, 1.6 * dpr);
-  g.strokeRect(at(0), at(0), at(size - 1) - at(0), at(size - 1) - at(0));
+  g.lineWidth = Math.max(1.5, 1.6 * dpr);
+  g.strokeRect(atX(0), atY(0), span, span);
 
-  // star points
-  g.fillStyle = "#4a3810";
+  g.fillStyle = "rgba(64, 40, 8, 0.92)";
   for (const [sx, sy] of stars(size)) {
-    g.beginPath();
-    g.arc(at(sx), at(sy), Math.max(2, cell * 0.055), 0, 7);
-    g.fill();
+    g.beginPath(); g.arc(atX(sx), atY(sy), Math.max(2, cell * 0.06), 0, 7); g.fill();
   }
 
-  // territory
+  /* ---- territory */
   if (opts.territory) {
     for (const key in opts.territory) {
-      const [x, y] = key.split(",").map(Number);
       const o = opts.territory[key];
       if (o !== "B" && o !== "W") continue;
+      const [x, y] = key.split(",").map(Number);
       g.fillStyle = o === "B" ? "rgba(46, 92, 60, 0.55)" : "rgba(70, 110, 160, 0.55)";
-      const r = cell * 0.16;
-      diamond(g, at(x), at(y), r);
-      g.fill();
+      diamond(g, atX(x), atY(y), cell * 0.16); g.fill();
     }
   }
 
-  // coordinates
+  /* ---- coordinates */
   if (opts.labels) {
-    g.fillStyle = "rgba(74, 56, 16, 0.75)";
+    g.fillStyle = "rgba(84, 56, 14, 0.8)";
     g.font = `${Math.round(cell * 0.34)}px Georgia`;
     g.textAlign = "center"; g.textBaseline = "middle";
     for (let i = 0; i < size; i++) {
-      g.fillText(LETTERS[i], at(i), pad * 0.42);
-      g.fillText(String(size - i), pad * 0.4, at(i));
+      g.fillText(LETTERS[i], atX(i), by + pad * 0.42);
+      g.fillText(String(size - i), bx + pad * 0.4, atY(i));
     }
   }
 
-  // stones
+  /* ---- stones */
   const now = performance.now();
   for (let x = 0; x < size; x++)
     for (let y = 0; y < size; y++)
@@ -157,72 +197,153 @@ function renderBoard(g, px, size, board, opts = {}) {
           const t = Math.min(1, (now - pop.get(key)) / 140);
           scale = 0.55 + 0.45 * easeOutBack(t);
         }
-        stone(g, at(x), at(y), cell * 0.47 * scale, board[x][y]);
+        stone(g, atX(x), atY(y), cell * 0.47 * scale, board[x][y]);
       }
 
-  // hover ghost
   if (opts.hover && board[opts.hover.x][opts.hover.y] === 0) {
-    g.save();
-    g.globalAlpha = 0.45;
-    stone(g, at(opts.hover.x), at(opts.hover.y), cell * 0.47, opts.hoverColor);
+    g.save(); g.globalAlpha = 0.45;
+    stone(g, atX(opts.hover.x), atY(opts.hover.y), cell * 0.47, opts.hoverColor);
     g.restore();
   }
 
-  // last move marker
   if (opts.last && board[opts.last[0]][opts.last[1]]) {
-    g.strokeStyle = board[opts.last[0]][opts.last[1]] === WHITE ? "#d84c4c" : "#f5efe0";
+    g.strokeStyle = board[opts.last[0]][opts.last[1]] === WHITE ? "#d84c4c" : "#f7f2e4";
     g.lineWidth = Math.max(1.6, 1.8 * dpr);
-    g.beginPath();
-    g.arc(at(opts.last[0]), at(opts.last[1]), cell * 0.17, 0, 7);
-    g.stroke();
+    g.beginPath(); g.arc(atX(opts.last[0]), atY(opts.last[1]), cell * 0.17, 0, 7); g.stroke();
   }
-  return { cell, pad, at };
+
+  /* ---- bowls and lids */
+  for (const b of opts.bowls || []) bowl(g, b);
+
+  return { cell, pad, bx, by };
 }
 
+/* Glossy lens-shaped stone with a contact shadow. */
 function stone(g, cx, cy, r, color) {
   g.save();
-  g.shadowColor = "rgba(0,0,0,0.45)";
-  g.shadowBlur = r * 0.5;
-  g.shadowOffsetY = r * 0.22;
-  const grad = g.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.15, cx, cy, r * 1.05);
+  g.shadowColor = "rgba(52, 30, 8, 0.5)";
+  g.shadowBlur = r * 0.42; g.shadowOffsetY = r * 0.2;
+  const grad = g.createRadialGradient(cx - r * 0.34, cy - r * 0.42, r * 0.12, cx, cy, r * 1.08);
   if (color === BLACK) {
-    grad.addColorStop(0, "#5a6472");
-    grad.addColorStop(0.35, "#232830");
-    grad.addColorStop(1, "#05070a");
+    grad.addColorStop(0, "#79838f");
+    grad.addColorStop(0.3, "#2d333c");
+    grad.addColorStop(0.72, "#0d1015");
+    grad.addColorStop(1, "#04060a");
   } else {
     grad.addColorStop(0, "#ffffff");
-    grad.addColorStop(0.55, "#f0ede3");
-    grad.addColorStop(1, "#b9b2a0");
+    grad.addColorStop(0.5, "#f6f2e7");
+    grad.addColorStop(0.85, "#ddd5c2");
+    grad.addColorStop(1, "#b0a891");
   }
   g.fillStyle = grad;
-  g.beginPath();
-  g.arc(cx, cy, r, 0, 7);
-  g.fill();
+  g.beginPath(); g.ellipse(cx, cy, r, r * 0.94, 0, 0, 7); g.fill();
   g.restore();
-  g.strokeStyle = color === BLACK ? "#000" : "#a49b86";
+
+  g.strokeStyle = color === BLACK ? "rgba(0,0,0,0.85)" : "rgba(150,142,120,0.75)";
   g.lineWidth = 1;
-  g.beginPath();
-  g.arc(cx, cy, r, 0, 7);
-  g.stroke();
+  g.beginPath(); g.ellipse(cx, cy, r, r * 0.94, 0, 0, 7); g.stroke();
+
+  // specular gloss
+  g.save();
+  const hi = g.createRadialGradient(cx - r * 0.33, cy - r * 0.42, 0, cx - r * 0.33, cy - r * 0.42, r * 0.62);
+  hi.addColorStop(0, color === BLACK ? "rgba(255,255,255,0.42)" : "rgba(255,255,255,0.95)");
+  hi.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = hi;
+  g.beginPath(); g.ellipse(cx - r * 0.3, cy - r * 0.4, r * 0.42, r * 0.3, -0.5, 0, 7); g.fill();
+  g.restore();
+}
+
+/* Ceramic go-bowl (bowl = prisoners, lid = a single resting stone). */
+function bowl(g, b) {
+  const { cx, cy, r, color, lid } = b;
+  const rad = r * 0.44;
+  g.save();
+  g.translate(cx, cy);
+
+  g.save();
+  g.rotate((color === BLACK ? -1 : 1) * 0.05);
+  g.shadowColor = "rgba(38, 18, 4, 0.55)";
+  g.shadowBlur = r * 0.5; g.shadowOffsetY = r * 0.22;
+  const body = g.createLinearGradient(-r, -r, r, r);
+  if (lid) {
+    body.addColorStop(0, "#96633a"); body.addColorStop(0.5, "#74452a"); body.addColorStop(1, "#4d2b16");
+  } else {
+    body.addColorStop(0, "#82502d"); body.addColorStop(0.5, "#5e351c"); body.addColorStop(1, "#3a1e0c");
+  }
+  roundRect(g, -r, -r, 2 * r, 2 * r, rad); g.fillStyle = body; g.fill();
+  g.shadowColor = "transparent";
+
+  g.lineWidth = Math.max(1, r * 0.05);
+  g.strokeStyle = "rgba(255, 216, 168, 0.22)";
+  roundRect(g, -r * 0.97, -r * 0.97, r * 1.94, r * 1.94, rad); g.stroke();
+
+  if (lid) {
+    g.strokeStyle = "rgba(34, 15, 4, 0.4)"; g.lineWidth = Math.max(1, r * 0.07);
+    roundRect(g, -r * 0.6, -r * 0.6, r * 1.2, r * 1.2, rad * 0.75); g.stroke();
+    stone(g, 0, -r * 0.06, r * 0.3, color);
+  } else {
+    const well = g.createRadialGradient(0, -r * 0.25, r * 0.08, 0, 0, r * 1.15);
+    well.addColorStop(0, "#5c3517"); well.addColorStop(1, "#1d0e04");
+    roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9);
+    g.fillStyle = well; g.fill();
+
+    g.save();
+    roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9); g.clip();
+    const sr = r * 0.25;
+    /* a heaped bowl: base ring, then a middle ring, then the crown */
+    const rings = [
+      { rr: 1.55, n: 8, off: 0.0, z: 0.94 },
+      { rr: 0.78, n: 5, off: 0.35, z: 1.0 },
+      { rr: 0.0, n: 1, off: 0.0, z: 1.04 },
+    ];
+    for (const ring of rings) {
+      for (let i = 0; i < ring.n; i++) {
+        const a = ring.rr === 0 ? 0 : (i / ring.n) * Math.PI * 2 + ring.off;
+        stone(g, Math.cos(a) * sr * ring.rr * 2.0,
+              Math.sin(a) * sr * ring.rr * 1.7 - r * 0.04,
+              sr * ring.z, color);
+      }
+    }
+    g.restore();
+  }
+  g.restore();
+
+  if (!lid && b.label) {
+    g.fillStyle = "rgba(255, 240, 214, 0.8)";
+    g.font = `${Math.max(9, Math.round(r * 0.26))}px Georgia`;
+    g.textAlign = "center"; g.textBaseline = "top";
+    g.fillText(b.label, 0, r * 1.12);
+  }
+  g.restore();
 }
 
 function paint() {
   if (!state) return;
   const dpr = window.devicePixelRatio || 1;
-  const { px, cell, pad } = metrics();
-  canvas.width = px * dpr;
-  canvas.height = px * dpr;
-  canvas.style.width = px + "px";
-  canvas.style.height = px + "px";
+  const S = scene();
+  S.cell = S.px / (state.size + 1.1);
+  S.pad = S.cell * 1.05;
+  const cb = state.captured_by || {};
+  for (const b of S.bowls) {
+    if (b.lid) continue;
+    b.count = cb[String(b.color)] || 0;
+    b.label = b.count ? b.count + " taken" : "";
+  }
+  canvas.width = Math.round(S.W * dpr);
+  canvas.height = Math.round(S.H * dpr);
+  canvas.style.width = S.W + "px";
+  canvas.style.height = S.H + "px";
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, px, px);
-  state._m = renderBoard(ctx, px, state.size, state.board, {
+  ctx.clearRect(0, 0, S.W, S.H);
+  L = S;
+  renderBoard(ctx, state.size, state.board, S, {
     labels: true,
-    hover,
+    hover: state.over ? null : hover,
     hoverColor: state.turn,
     last: state.last_move,
     territory: state.territory,
     anim: true,
+    bowls: S.bowls,
   });
 }
 
@@ -256,15 +377,16 @@ function stars(size) {
 
 /* ------------------------------------------------------------------ input */
 function posFromEvent(ev) {
+  if (!L) return null;
   const rect = canvas.getBoundingClientRect();
-  const { cell, pad } = metrics();
-  const x = Math.round((ev.clientX - rect.left - pad) / cell);
-  const y = Math.round((ev.clientY - rect.top - pad) / cell);
+  const x = Math.round((ev.clientX - rect.left - L.bx - L.pad) / L.cell);
+  const y = Math.round((ev.clientY - rect.top - L.by - L.pad) / L.cell);
   if (x < 0 || y < 0 || x >= state.size || y >= state.size) return null;
   return { x, y };
 }
 
 canvas.addEventListener("mousemove", (ev) => {
+  if (!state || state.over) { hover = null; return; }
   const p = posFromEvent(ev);
   const same = p && hover && p.x === hover.x && p.y === hover.y;
   hover = p && state.board[p.x][p.y] === 0 ? p : null;
@@ -507,7 +629,7 @@ function renderLesson() {
         else territory[x + "," + y] = "dame";
       }
   }
-  renderBoard(g, px, size, board, { labels: false, territory });
+  renderBoard(g, size, board, plainScene(px), { labels: false, territory });
   if (L.marks) {
     const cell = px / (size + 1.1), pad = cell * 1.05;
     for (const [x, y] of L.marks) {
