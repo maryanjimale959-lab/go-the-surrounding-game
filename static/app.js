@@ -254,11 +254,16 @@ function stone(g, cx, cy, r, color) {
   g.restore();
 }
 
-/* Ceramic go-bowl. Both bowls and lids start empty — a real set has nothing in
-   it before the first capture. Whatever a colour has taken sits on its lid (on
-   a phone, where there is no room for lids, it sits in the bowl instead), and
-   the stones are drawn in the enemy's colour because they are enemy prisoners. */
+/* Ceramic go-bowl. The bowl is heaped with that colour's stones — how many are
+   still unplayed — exactly like the reference set. The lid beside it is the
+   taking dish: empty until the first capture, then it holds the prisoners in
+   the enemy's colour, because those are the stones that colour has lost. */
 const BOWL_SPOTS = [[0, -0.08], [0.44, 0.32], [-0.42, 0.3], [0.16, 0.66], [-0.3, -0.5]];
+const BOWL_RINGS = [
+  { rr: 1.55, n: 8, off: 0.0, z: 0.94 },
+  { rr: 0.78, n: 5, off: 0.35, z: 1.0 },
+  { rr: 0.0, n: 1, off: 0.0, z: 1.04 },
+];
 
 function bowl(g, b) {
   const { cx, cy, r, color, lid } = b;
@@ -283,20 +288,34 @@ function bowl(g, b) {
   g.strokeStyle = "rgba(255, 216, 168, 0.22)";
   roundRect(g, -r * 0.97, -r * 0.97, r * 1.94, r * 1.94, rad); g.stroke();
 
-  const shown = Math.max(0, Math.min(b.count || 0, BOWL_SPOTS.length));
+  const shown = Math.max(0, b.count || 0);
 
   if (lid) {
     g.strokeStyle = "rgba(34, 15, 4, 0.4)"; g.lineWidth = Math.max(1, r * 0.07);
     roundRect(g, -r * 0.6, -r * 0.6, r * 1.2, r * 1.2, rad * 0.75); g.stroke();
+    for (let i = 0; i < Math.min(shown, BOWL_SPOTS.length); i++) {
+      stone(g, BOWL_SPOTS[i][0] * r, BOWL_SPOTS[i][1] * r, r * 0.27, -color);
+    }
   } else {
     const well = g.createRadialGradient(0, -r * 0.25, r * 0.08, 0, 0, r * 1.15);
     well.addColorStop(0, "#5c3517"); well.addColorStop(1, "#1d0e04");
     roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9);
     g.fillStyle = well; g.fill();
-  }
-  const k = lid ? 1 : 0.72;                     // keep prisoners inside the well
-  for (let i = 0; i < shown; i++) {
-    stone(g, BOWL_SPOTS[i][0] * r * k, BOWL_SPOTS[i][1] * r * k, r * 0.27, -color);
+
+    g.save();
+    roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9); g.clip();
+    const sr = r * 0.25;
+    /* heaped from the outside in, so an almost-empty bowl still reads clearly */
+    let left = Math.min(shown, 14);
+    for (const ring of BOWL_RINGS) {
+      for (let i = 0; i < ring.n && left > 0; i++, left--) {
+        const a = ring.rr === 0 ? 0 : (i / ring.n) * Math.PI * 2 + ring.off;
+        stone(g, Math.cos(a) * sr * ring.rr * 2.0,
+              Math.sin(a) * sr * ring.rr * 1.7 - r * 0.04, sr * ring.z, color);
+      }
+      if (left <= 0) break;
+    }
+    g.restore();
   }
   g.restore();
 
@@ -316,18 +335,22 @@ function paint() {
   S.cell = S.px / (state.size + 1.1);
   S.pad = S.cell * 1.05;
   const cb = state.captured_by || {};
+  const cells = state.size * state.size;
+  const capacity = { 1: Math.ceil(cells / 2), "-1": Math.floor(cells / 2) };
+  const onBoard = { 1: 0, "-1": 0 };
+  for (const row of state.board) for (const v of row) if (v) onBoard[v]++;
   for (const b of S.bowls) {
-    /* Bowls and lids are empty at the start; a colour's prisoners land on its
-       lid, or in its bowl when the scene has no room for lids (phone). */
     const taken = cb[String(b.color)] || 0;
+    const lost = cb[String(-b.color)] || 0;
+    const left = Math.max(0, capacity[b.color] - onBoard[b.color] - lost);
     if (b.lid) {
       b.count = taken;
       b.label = taken ? taken + " taken" : "";
     } else {
-      b.count = S.wide ? 0 : taken;
-      const role = roleName(b.color);
-      b.label = dot(b.color) + " " + (role || (b.color === BLACK ? "Black" : "White"))
-        + (!S.wide && taken ? " · " + taken + " taken" : "");
+      b.count = Math.round(14 * Math.min(1, left / capacity[b.color]));
+      const who = dot(b.color) + " " + (roleName(b.color) || (b.color === BLACK ? "Black" : "White"));
+      b.label = S.wide ? who + " · " + left + " left"
+                       : who + (taken ? " · " + taken + " taken" : "");
     }
   }
   canvas.width = Math.round(S.W * dpr);
