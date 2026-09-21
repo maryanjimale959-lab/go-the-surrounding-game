@@ -6,7 +6,8 @@ any browser: desktop, tablet or phone on the same Wi-Fi.
 API (JSON):
     GET  /api/state            full game state
     POST /api/new   {size, mode, level, human_color}
-    POST /api/move  {x, y}
+    POST /api/move  {x, y}        pass ai=false to keep the AI's reply for later
+    POST /api/ai_move {}          let the AI play if it is its turn
     POST /api/pass  {}
     POST /api/undo  {}
     POST /api/score {}        end the game and count the board
@@ -178,11 +179,16 @@ class Handler(BaseHTTPRequestHandler):
             if not ok_move:
                 self._send(200, {"ok": False, "error": info, "state": state_payload()})
                 return
+            if body.get("ai", True):
+                _ai_turn()
+            self._send(200, ok())
+        elif path == "/api/ai_move":
+            # Lets the browser show the human's stone for a beat before answering.
             _ai_turn()
             self._send(200, ok())
         elif path == "/api/pass":
             g.pass_move()
-            if not g.over:
+            if not g.over and body.get("ai", True):
                 _ai_turn()
             self._send(200, ok())
         elif path == "/api/undo":

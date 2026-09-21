@@ -202,7 +202,7 @@ class BoardView(tk.Canvas):
             px, py = self.P(i, lo - 0.45)
             self.create_text(px, py, text=LETTERS[i], fill=MUTED, font=font)
             px, py = self.P(lo - 0.45, i)
-            self.create_text(px, py, text=str(size - i), fill=MUTED, font=font)
+            self.create_text(px, py, text=str(i + 1), fill=MUTED, font=font)
 
         # stones, far to near
         stones = [(x, y) for x in range(size) for y in range(size) if board[x][y] != EMPTY]

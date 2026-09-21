@@ -5,6 +5,7 @@ const LETTERS = "ABCDEFGHJKLMNOPQRST";
 const BLACK = 1, WHITE = -1;
 
 var state = null;   // var (not let) so it is reachable as window.state for debugging
+const AI_THINK_MS = 750;   // pause so you can see your own stone before the AI answers
 let busy = false;
 let hover = null;                 // {x, y}
 const pop = new Map();            // "x,y" -> animation start time
@@ -182,7 +183,7 @@ function renderBoard(g, size, board, S, opts = {}) {
     g.textAlign = "center"; g.textBaseline = "middle";
     for (let i = 0; i < size; i++) {
       g.fillText(LETTERS[i], atX(i), by + pad * 0.42);
-      g.fillText(String(size - i), bx + pad * 0.4, atY(i));
+      g.fillText(String(i + 1), bx + pad * 0.4, atY(i));
     }
   }
 
@@ -253,7 +254,8 @@ function stone(g, cx, cy, r, color) {
   g.restore();
 }
 
-/* Ceramic go-bowl (bowl = prisoners, lid = a single resting stone). */
+/* Ceramic go-bowl: the bowl holds that colour's unused stones, its lid holds
+   the prisoners it has taken — both empty as the set gets played through. */
 function bowl(g, b) {
   const { cx, cy, r, color, lid } = b;
   const rad = r * 0.44;
@@ -277,10 +279,16 @@ function bowl(g, b) {
   g.strokeStyle = "rgba(255, 216, 168, 0.22)";
   roundRect(g, -r * 0.97, -r * 0.97, r * 1.94, r * 1.94, rad); g.stroke();
 
+  const shown = Math.max(0, Math.min(b.count || 0, b.max || 14));
+
   if (lid) {
     g.strokeStyle = "rgba(34, 15, 4, 0.4)"; g.lineWidth = Math.max(1, r * 0.07);
     roundRect(g, -r * 0.6, -r * 0.6, r * 1.2, r * 1.2, rad * 0.75); g.stroke();
-    stone(g, 0, -r * 0.06, r * 0.3, color);
+    const spots = [[0, -0.08], [0.44, 0.32], [-0.42, 0.3], [0.16, 0.66], [-0.3, -0.5]];
+    for (let i = 0; i < Math.min(shown, spots.length); i++) {
+      // the stones on your lid are the ones you took — so they are the enemy's colour
+      stone(g, spots[i][0] * r, spots[i][1] * r, r * 0.27, -color);
+    }
   } else {
     const well = g.createRadialGradient(0, -r * 0.25, r * 0.08, 0, 0, r * 1.15);
     well.addColorStop(0, "#5c3517"); well.addColorStop(1, "#1d0e04");
@@ -290,25 +298,27 @@ function bowl(g, b) {
     g.save();
     roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9); g.clip();
     const sr = r * 0.25;
-    /* a heaped bowl: base ring, then a middle ring, then the crown */
+    /* heaped from the outside in, so an almost-empty bowl still reads clearly */
     const rings = [
       { rr: 1.55, n: 8, off: 0.0, z: 0.94 },
       { rr: 0.78, n: 5, off: 0.35, z: 1.0 },
       { rr: 0.0, n: 1, off: 0.0, z: 1.04 },
     ];
+    let left = shown;
     for (const ring of rings) {
-      for (let i = 0; i < ring.n; i++) {
+      for (let i = 0; i < ring.n && left > 0; i++, left--) {
         const a = ring.rr === 0 ? 0 : (i / ring.n) * Math.PI * 2 + ring.off;
         stone(g, Math.cos(a) * sr * ring.rr * 2.0,
               Math.sin(a) * sr * ring.rr * 1.7 - r * 0.04,
               sr * ring.z, color);
       }
+      if (left <= 0) break;
     }
     g.restore();
   }
   g.restore();
 
-  if (!lid && b.label) {
+  if (b.label) {
     g.fillStyle = "rgba(255, 240, 214, 0.8)";
     g.font = `${Math.max(9, Math.round(r * 0.26))}px Georgia`;
     g.textAlign = "center"; g.textBaseline = "top";
@@ -324,10 +334,22 @@ function paint() {
   S.cell = S.px / (state.size + 1.1);
   S.pad = S.cell * 1.05;
   const cb = state.captured_by || {};
+  const cells = state.size * state.size;
+  const capacity = { 1: Math.ceil(cells / 2), "-1": Math.floor(cells / 2) };
+  const onBoard = { 1: 0, "-1": 0 };
+  for (const row of state.board) for (const v of row) if (v) onBoard[v]++;
   for (const b of S.bowls) {
-    if (b.lid) continue;
-    b.count = cb[String(b.color)] || 0;
-    b.label = b.count ? b.count + " taken" : "";
+    const taken = cb[String(b.color)] || 0;
+    const lost = cb[String(-b.color)] || 0;
+    const left = Math.max(0, capacity[b.color] - onBoard[b.color] - lost);
+    if (b.lid) {
+      b.count = taken; b.max = 5;
+      b.label = taken ? taken + " taken" : "";
+    } else {
+      b.count = Math.round(14 * Math.min(1, left / capacity[b.color]));
+      b.max = 14;
+      b.label = left + " left";
+    }
   }
   canvas.width = Math.round(S.W * dpr);
   canvas.height = Math.round(S.H * dpr);
@@ -402,13 +424,24 @@ canvas.addEventListener("click", async (ev) => {
   busy = true; updatePanel();
   clickStone();
   try {
-    apply(await api("/api/move", p));
+    await playHuman(() => api("/api/move", { x: p.x, y: p.y, ai: false }));
   } catch (e) {
     hint("Server unreachable — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
 });
+
+/* Show the player's own move for a moment, then let the AI answer. */
+async function playHuman(request) {
+  apply(await request());
+  if (state && state.ai_color !== null && !state.over && state.turn === state.ai_color) {
+    updatePanel();
+    await new Promise((r) => setTimeout(r, AI_THINK_MS));
+    apply(await api("/api/ai_move"));
+    clickStone();
+  }
+}
 
 let hintTimer = null;
 function hint(msg) {
@@ -495,7 +528,7 @@ $("#btn-pass").onclick = async () => {
   if (busy || !state || state.over) return;
   busy = true; updatePanel();
   try {
-    apply(await api("/api/pass"));
+    await playHuman(() => api("/api/pass", { ai: false }));
     log("Pass");
   } catch (e) {
     hint("Server unreachable — reload the page.");

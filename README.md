@@ -113,7 +113,8 @@ The project is layered so that the rules exist exactly once:
 
 **Coordinates.** The board is `board[x][y]` where `x` is the file (letter,
 `A..T` skipping `I` by Go convention) and `y` is the rank counted from the
-top, so `engine.move_name(19, 3, 3)` returns `"D16"`.
+top, so `engine.move_name(19, 3, 3)` returns `"D4"`. Both boards print `1`
+on the top row and `A` on the left column.
 
 **Two front-ends, one brain.** The Tkinter app calls `Game` and `GoAI`
 directly in-process — no HTTP, no JSON. Both apps render the same rules and

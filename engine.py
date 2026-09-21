@@ -28,7 +28,7 @@ LETTERS = "ABCDEFGHJKLMNOPQRST"  # Go convention skips the letter I
 
 
 def move_name(size: int, x: int, y: int) -> str:
-    return f"{LETTERS[x]}{size - y}"
+    return f"{LETTERS[x]}{y + 1}"
 
 
 def _neighbours(size: int, x: int, y: int):
