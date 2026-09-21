@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go — the Surrounding Game</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23d8a04a'/%3E%3Ccircle cx='12' cy='12' r='6' fill='%23111'/%3E%3Ccircle cx='21' cy='20' r='6' fill='%23f6f2e8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo"><i class="dot b"></i><i class="dot w"></i></span>
+    <div>
+      <h1>Go</h1>
+      <p>the surrounding game</p>
+    </div>
+  </div>
+  <nav>
+    <button id="btn-rules" class="ghost">Rules &amp; Math</button>
+    <button id="btn-learn" class="ghost">Learn Go</button>
+  </nav>
+</header>
+
+<main>
+  <section class="board-wrap card">
+    <canvas id="board"></canvas>
+    <div id="thinking" class="hidden"><span class="spinner"></span> AI is thinking…</div>
+    <div id="toast" class="hidden"></div>
+  </section>
+
+  <aside class="panel">
+    <div class="card status">
+      <div id="turn" class="turn">● Black to move</div>
+      <div id="meta" class="meta"></div>
+    </div>
+
+    <div class="card settings">
+      <label>Mode
+        <div class="seg">
+          <button id="m-ai" class="on">vs AI</button>
+          <button id="m-2p">2 Players</button>
+        </div>
+      </label>
+      <div id="ai-only">
+        <label>AI level
+          <select id="level">
+            <option value="easy">Easy — beginner</option>
+            <option value="medium" selected>Medium — club</option>
+            <option value="hard">Hard — strong attacks</option>
+            <option value="master">Master — MCTS search</option>
+          </select>
+        </label>
+        <label>You play
+          <select id="color">
+            <option value="1" selected>Black (first)</option>
+            <option value="-1">White (+7.5 komi)</option>
+          </select>
+        </label>
+      </div>
+      <label>Board
+        <select id="size">
+          <option value="9" selected>9×9 — quick game</option>
+          <option value="13">13×13 — balanced</option>
+          <option value="19">19×19 — full board</option>
+        </select>
+      </label>
+      <button id="btn-new" class="primary">New Game</button>
+      <div class="row">
+        <button id="btn-pass">Pass</button>
+        <button id="btn-undo">Undo</button>
+        <button id="btn-score">Score</button>
+      </div>
+    </div>
+
+    <div class="card log">
+      <h3>Game log</h3>
+      <ul id="log"></ul>
+    </div>
+  </aside>
+</main>
+
+<footer class="credit">Created by <b>Maryam J.</b> · rules engine, heuristic AI &amp; MCTS, all math from scratch</footer>
+
+<dialog id="dlg-rules"><div class="dlg-body"><h2>Rules, Instructions &amp; Math</h2><div id="rules-text"></div><p class="credit dlg-credit">Created by <b>Maryam J.</b></p><form method="dialog"><button class="primary">Close</button></form></div></dialog>
+<dialog id="dlg-score"><div class="dlg-body"><h2 id="score-title">Final score</h2><div id="score-text"></div><form method="dialog"><button class="primary">Close</button></form></div></dialog>
+<dialog id="dlg-learn"><div class="dlg-body" id="dlg-learn-body"></div></dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
