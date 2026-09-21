@@ -84,8 +84,23 @@ def test_scoring_math():
     assert res["black_territory"] == 10  # columns 0 and 1
     assert res["white_territory"] == 0
     assert res["dame"] == 6  # right-side points touch both colours
-    assert res["white_total"] == res["white_stones"] + res["white_territory"] + 7.5
+    assert res["black_dame"] == res["white_dame"] == 3
+    assert res["white_total"] == res["white_stones"] + res["white_territory"] + 3 + 7.5
+    assert res["black_total"] + res["white_total"] - res["komi"] == 25
     assert res["winner"] == "Black"
+
+
+def test_komi_can_flip_a_board_lead():
+    # Two walls, one per colour: both sides own 5 points and 5 stones.
+    board = empty_board(5)
+    for y in range(5):
+        board[1][y] = BLACK
+        board[3][y] = WHITE
+    res = fresh_game(5, board).score()
+    assert res["black_territory"] == res["white_territory"] == 5
+    assert res["dame"] == 5 and res["black_dame"] == 3 and res["white_dame"] == 2
+    assert res["black_total"] > res["white_total"] - res["komi"], "Black leads on the board"
+    assert res["winner"] == "White" and res["margin"] == 6.5
 
 
 def test_influence_field():
@@ -110,13 +125,8 @@ def test_ai_selfplay():
             ok, info = g.play(*mv)
             assert ok, info
     res = g.final_score()
-    accounted = (
-        res["black_total"]
-        + res["white_total"]
-        - res["komi"]
-        + res["dame"]
-    )
-    assert accounted <= 81
+    accounted = res["black_total"] + res["white_total"] - res["komi"]
+    assert accounted == 81, accounted
     print(f"self-play finished: Black {res['black_total']} - White {res['white_total']} "
           f"({res['winner']} wins by {res['margin']})")
 
@@ -145,6 +155,7 @@ if __name__ == "__main__":
     test_suicide_banned()
     test_ko()
     test_scoring_math()
+    test_komi_can_flip_a_board_lead()
     test_influence_field()
     test_ai_selfplay()
     test_mcts()

@@ -13,10 +13,15 @@ Mathematical model
 * **Super-ko:** a move may not recreate any position that already occurred
   in the game (board states are stored as immutable tuple keys).
 * **Area scoring (Chinese rules):**
-      Score(Black) = stones_on_board(B) + territory(B)
-      Score(White) = stones_on_board(W) + territory(W) + komi
+      Score(Black) = stones_on_board(B) + territory(B) + neutral_filled(B)
+      Score(White) = stones_on_board(W) + territory(W) + neutral_filled(W) + komi
   Territory is an empty region bordered by exactly one colour; regions
-  bordered by both colours (or nothing) are *dame* (neutral points).
+  bordered by both colours (or nothing) are *dame* (neutral points).  Because
+  a game can end on two passes while dame are still open, they are shared out
+  in filling order (Black first), which keeps the count exact:
+      Score(Black) + Score(White) - komi == size**2
+  White's komi (7.5) is compensation for moving second, so Black has to win by
+  8 points or more: a player who is ahead by less than 7.5 on the board loses.
 """
 
 from __future__ import annotations
@@ -218,7 +223,14 @@ class Game:
         return owners
 
     def score(self):
-        """Area scoring breakdown (Chinese rules, komi for White)."""
+        """Area scoring breakdown (Chinese rules, komi for White).
+
+        Two passes can end a game while neutral points (dame) are still open,
+        so those are shared out in filling order — Black fills first — instead
+        of being dropped.  That keeps the count exact:
+
+            S(B) + S(W) - komi == size**2
+        """
         board = self.board
         black_stones = sum(row.count(BLACK) for row in board)
         white_stones = sum(row.count(WHITE) for row in board)
@@ -227,9 +239,11 @@ class Game:
         black_territory = sum(1 for o in owners.values() if o == BLACK)
         white_territory = sum(1 for o in owners.values() if o == WHITE)
         dame = sum(1 for o in owners.values() if o == "dame")
+        black_dame = (dame + 1) // 2
+        white_dame = dame // 2
 
-        black_total = black_stones + black_territory
-        white_total = white_stones + white_territory + self.komi
+        black_total = black_stones + black_territory + black_dame
+        white_total = white_stones + white_territory + white_dame + self.komi
         margin = black_total - white_total
         if margin > 0:
             winner = "Black"
@@ -243,6 +257,8 @@ class Game:
             "black_territory": black_territory,
             "white_territory": white_territory,
             "dame": dame,
+            "black_dame": black_dame,
+            "white_dame": white_dame,
             "komi": self.komi,
             "black_total": black_total,
             "white_total": white_total,

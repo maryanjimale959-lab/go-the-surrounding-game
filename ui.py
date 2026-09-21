@@ -78,12 +78,20 @@ previous position. This game enforces the stricter super-ko:
 RULE 5 — PASSING & END OF GAME
 Two consecutive passes end the game. Each empty region touching
 exactly one colour becomes that colour's territory; regions touching
-both colours (or nothing) are neutral points — dame.
+both colours (or nothing) are neutral points — dame. Because a game can
+end while dame are still open, they are shared out in filling order
+(Black first) so that no point of the board is simply thrown away.
 
 SCORING (area / Chinese rules)
-    S(Black) = stones(B) + territory(B)
-    S(White) = stones(W) + territory(W) + 7.5
-    stones(B) + stones(W) + terr(B) + terr(W) + dame = size²
+    S(Black) = stones(B) + territory(B) + neutral(B)
+    S(White) = stones(W) + territory(W) + neutral(W) + 7.5
+    S(Black) + S(White) - 7.5 = size²   (every point is accounted for)
+
+WHO WINS — AND THE ONE TRICK ABOUT KOMI
+Add the two totals; the larger one wins. White's 7.5 komi is compensation for
+letting Black move first, so a Black player who finishes ahead on the board by
+7 points or fewer still loses. Captures are never added on top: a stone you
+take is simply a stone that stops counting for your opponent.
 
 THE MATHEMATICS THE AI USES
 • Influence field — every stone pulls on nearby points with
@@ -370,7 +378,7 @@ class GoApp:
         self.msg_label = label("", font=("Segoe UI", 10), fg=RED, wraplength=240, justify="left")
         self.msg_label.pack(anchor="w", pady=(4, 0))
 
-        label("Black moves first · komi 7.5\ntwo passes end the game",
+        label("Black moves first · White is given +7.5 komi\ntwo passes end the game",
               font=("Segoe UI", 9), fg=MUTED, justify="left").pack(side="bottom", pady=6)
 
     def _button(self, text, cmd, bg, fg):
@@ -511,18 +519,33 @@ class GoApp:
     def update_status(self):
         g = self.game
         if g.over:
-            self.turn_label.configure(text="Game over", fg=GREEN)
+            res = g.final_score()
+            if res["winner"] == "Draw":
+                text = "Game over — draw"
+            else:
+                w = BLACK if res["winner"] == "Black" else WHITE
+                name = self.name_of(w)
+                text = f"Game over — {name} {'win' if name == 'You' else 'wins'} by {res['margin']:.1f}"
+            self.turn_label.configure(text=text, fg=GREEN)
         else:
             who = COLOR_NAMES[g.current]
             dot = "●" if g.current == BLACK else "○"
             if self.ai and g.current != self.human_color:
                 text = f"{dot} {who} (AI) is thinking…"
+            elif self.ai:
+                text = f"{dot} {who} (you) to move"
             else:
                 text = f"{dot} {who} to move"
             self.turn_label.configure(text=text, fg=INK)
-        cap = f"Captured — Black: {g.captured_by[BLACK]}   White: {g.captured_by[WHITE]}"
-        last = f"Last move: {move_name(g.size, *g.last_move)}" if g.last_move else "Last move: pass"
-        self.info_label.configure(text=f"{cap}\n{last}\nMoves played: {g.move_number}")
+        cap = (f"Prisoners taken — Black: {g.captured_by[BLACK]}   "
+               f"White: {g.captured_by[WHITE]}")
+        lines = [cap]
+        if g.move_number:
+            lines.append(f"Last move: {move_name(g.size, *g.last_move)}"
+                         if g.last_move else "Last move: pass")
+        lines.append(f"Moves played: {g.move_number}")
+        lines.append(f"Komi +{g.komi} to White, so Black must lead the board by more than {g.komi}")
+        self.info_label.configure(text="\n".join(lines))
 
     # ------------------------------------------------------------ dialogs
     def show_rules(self):
@@ -539,21 +562,38 @@ class GoApp:
         text.insert("1.0", RULES_TEXT)
         text.configure(state="disabled")
 
+    def name_of(self, color):
+        """Who is behind a colour, so the result never reads as a bare 'White wins'."""
+        if self.ai is None:
+            return "Black" if color == BLACK else "White"
+        return "You" if color == self.human_color else "The AI"
+
     def show_score(self, headline):
         res = self.game.final_score()
         lines = [
             headline,
             "",
-            f"Black:  {res['black_stones']} stones + {res['black_territory']} territory = {res['black_total']:.1f}",
-            f"White:  {res['white_stones']} stones + {res['white_territory']} territory "
-            f"+ {res['komi']} komi = {res['white_total']:.1f}",
-            f"Neutral points (dame): {res['dame']}",
+            f"● Black ({self.name_of(BLACK)}):  {res['black_stones']} stones + {res['black_territory']} area "
+            f"+ {res['black_dame']} neutral = {res['black_total']:.1f}",
+            f"○ White ({self.name_of(WHITE)}):  {res['white_stones']} stones + {res['white_territory']} area "
+            f"+ {res['white_dame']} neutral + {res['komi']} komi = {res['white_total']:.1f}",
+            f"Check: {res['black_total']:.1f} + {res['white_total'] - res['komi']:.1f} = "
+            f"{self.game.size ** 2} points on the board",
             "",
         ]
-        if res["winner"] == "Draw":
+        winner = res["winner"]
+        if winner == "Draw":
             lines.append("Result: a perfect draw.")
         else:
-            lines.append(f"Winner: {res['winner']} by {res['margin']:.1f} points")
+            w = BLACK if winner == "Black" else WHITE
+            name = self.name_of(w)
+            lines.append(f"{name} {'win' if name == 'You' else 'wins'} by {res['margin']:.1f} points")
+            board_lead = res["black_total"] - (res["white_total"] - res["komi"])
+            if winner == "White" and board_lead > 0:
+                lines.append(
+                    f"{self.name_of(BLACK)} surrounded {board_lead:.1f} more points, but White's "
+                    f"{res['komi']} komi for moving second is added on top and decides the game."
+                )
         messagebox.showinfo("Final score", "\n".join(lines))
 
     def open_learn(self):
@@ -623,12 +663,14 @@ LESSONS = [
     dict(
         title="6 · Territory and scoring",
         text="Two passes end the game. An empty region touching exactly one colour becomes "
-             "territory (shaded here); regions touching both are dame (neutral).\n\n"
-             "    S(B) = stones(B) + territory(B)\n"
-             "    S(W) = stones(W) + territory(W) + 7.5 (komi)\n\n"
-             "    stones(B)+stones(W)+terr(B)+terr(W)+dame = size²\n\n"
+             "territory (shaded here); regions touching both are dame (neutral), shared out "
+             "in filling order.\n\n"
+             "    S(B) = stones(B) + territory(B) + neutral(B)\n"
+             "    S(W) = stones(W) + territory(W) + neutral(W) + 7.5 (komi)\n\n"
+             "    S(B) + S(W) - 7.5 = size²\n\n"
              "Here Black's wall owns the left, White's wall the right, and the middle "
-             "column is dame.",
+             "column is dame. Remember the komi: Black has to be ahead by more than 7.5 "
+             "to actually win.",
         setup=[(3, y, BLACK) for y in range(9)] + [(5, y, WHITE) for y in range(9)],
         current=BLACK, markers=[], territory=True,
     ),

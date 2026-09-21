@@ -254,8 +254,12 @@ function stone(g, cx, cy, r, color) {
   g.restore();
 }
 
-/* Ceramic go-bowl: the bowl holds that colour's unused stones, its lid holds
-   the prisoners it has taken — both empty as the set gets played through. */
+/* Ceramic go-bowl. Both bowls and lids start empty — a real set has nothing in
+   it before the first capture. Whatever a colour has taken sits on its lid (on
+   a phone, where there is no room for lids, it sits in the bowl instead), and
+   the stones are drawn in the enemy's colour because they are enemy prisoners. */
+const BOWL_SPOTS = [[0, -0.08], [0.44, 0.32], [-0.42, 0.3], [0.16, 0.66], [-0.3, -0.5]];
+
 function bowl(g, b) {
   const { cx, cy, r, color, lid } = b;
   const rad = r * 0.44;
@@ -279,42 +283,20 @@ function bowl(g, b) {
   g.strokeStyle = "rgba(255, 216, 168, 0.22)";
   roundRect(g, -r * 0.97, -r * 0.97, r * 1.94, r * 1.94, rad); g.stroke();
 
-  const shown = Math.max(0, Math.min(b.count || 0, b.max || 14));
+  const shown = Math.max(0, Math.min(b.count || 0, BOWL_SPOTS.length));
 
   if (lid) {
     g.strokeStyle = "rgba(34, 15, 4, 0.4)"; g.lineWidth = Math.max(1, r * 0.07);
     roundRect(g, -r * 0.6, -r * 0.6, r * 1.2, r * 1.2, rad * 0.75); g.stroke();
-    const spots = [[0, -0.08], [0.44, 0.32], [-0.42, 0.3], [0.16, 0.66], [-0.3, -0.5]];
-    for (let i = 0; i < Math.min(shown, spots.length); i++) {
-      // the stones on your lid are the ones you took — so they are the enemy's colour
-      stone(g, spots[i][0] * r, spots[i][1] * r, r * 0.27, -color);
-    }
   } else {
     const well = g.createRadialGradient(0, -r * 0.25, r * 0.08, 0, 0, r * 1.15);
     well.addColorStop(0, "#5c3517"); well.addColorStop(1, "#1d0e04");
     roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9);
     g.fillStyle = well; g.fill();
-
-    g.save();
-    roundRect(g, -r * 0.80, -r * 0.80, r * 1.6, r * 1.6, rad * 0.9); g.clip();
-    const sr = r * 0.25;
-    /* heaped from the outside in, so an almost-empty bowl still reads clearly */
-    const rings = [
-      { rr: 1.55, n: 8, off: 0.0, z: 0.94 },
-      { rr: 0.78, n: 5, off: 0.35, z: 1.0 },
-      { rr: 0.0, n: 1, off: 0.0, z: 1.04 },
-    ];
-    let left = shown;
-    for (const ring of rings) {
-      for (let i = 0; i < ring.n && left > 0; i++, left--) {
-        const a = ring.rr === 0 ? 0 : (i / ring.n) * Math.PI * 2 + ring.off;
-        stone(g, Math.cos(a) * sr * ring.rr * 2.0,
-              Math.sin(a) * sr * ring.rr * 1.7 - r * 0.04,
-              sr * ring.z, color);
-      }
-      if (left <= 0) break;
-    }
-    g.restore();
+  }
+  const k = lid ? 1 : 0.72;                     // keep prisoners inside the well
+  for (let i = 0; i < shown; i++) {
+    stone(g, BOWL_SPOTS[i][0] * r * k, BOWL_SPOTS[i][1] * r * k, r * 0.27, -color);
   }
   g.restore();
 
@@ -334,21 +316,18 @@ function paint() {
   S.cell = S.px / (state.size + 1.1);
   S.pad = S.cell * 1.05;
   const cb = state.captured_by || {};
-  const cells = state.size * state.size;
-  const capacity = { 1: Math.ceil(cells / 2), "-1": Math.floor(cells / 2) };
-  const onBoard = { 1: 0, "-1": 0 };
-  for (const row of state.board) for (const v of row) if (v) onBoard[v]++;
   for (const b of S.bowls) {
+    /* Bowls and lids are empty at the start; a colour's prisoners land on its
+       lid, or in its bowl when the scene has no room for lids (phone). */
     const taken = cb[String(b.color)] || 0;
-    const lost = cb[String(-b.color)] || 0;
-    const left = Math.max(0, capacity[b.color] - onBoard[b.color] - lost);
     if (b.lid) {
-      b.count = taken; b.max = 5;
+      b.count = taken;
       b.label = taken ? taken + " taken" : "";
     } else {
-      b.count = Math.round(14 * Math.min(1, left / capacity[b.color]));
-      b.max = 14;
-      b.label = left + " left";
+      b.count = S.wide ? 0 : taken;
+      const role = roleName(b.color);
+      b.label = dot(b.color) + " " + (role || (b.color === BLACK ? "Black" : "White"))
+        + (!S.wide && taken ? " · " + taken + " taken" : "");
     }
   }
   canvas.width = Math.round(S.W * dpr);
@@ -424,7 +403,7 @@ canvas.addEventListener("click", async (ev) => {
   busy = true; updatePanel();
   clickStone();
   try {
-    await playHuman(() => api("/api/move", { x: p.x, y: p.y, ai: false }));
+    await playHuman(ptName([p.x, p.y]), () => api("/api/move", { x: p.x, y: p.y, ai: false }));
   } catch (e) {
     hint("Server unreachable — reload the page.");
   } finally {
@@ -432,13 +411,25 @@ canvas.addEventListener("click", async (ev) => {
   }
 });
 
+function ptName(p) { return LETTERS[p[0]] + (p[1] + 1); }
+
 /* Show the player's own move for a moment, then let the AI answer. */
-async function playHuman(request) {
-  apply(await request());
+async function playHuman(label, request) {
+  const mover = state.turn;
+  const data = await request();
+  apply(data);
+  if (!data.ok) return;
+  log(`${dot(mover)} ${sideName(mover)} · ${label}`);
   if (state && state.ai_color !== null && !state.over && state.turn === state.ai_color) {
     updatePanel();
     await new Promise((r) => setTimeout(r, AI_THINK_MS));
-    apply(await api("/api/ai_move"));
+    const before = state.move_number;
+    const reply = await api("/api/ai_move");
+    apply(reply);
+    if (reply.ok && state.move_number > before) {
+      log(`${dot(state.ai_color)} ${sideName(state.ai_color)} · `
+        + (state.last_move ? ptName(state.last_move) : "passed"));
+    }
     clickStone();
   }
 }
@@ -453,35 +444,76 @@ function hint(msg) {
 }
 
 /* ------------------------------------------------------------------ panel */
+/* Which player is behind a colour: the bare "Black wins" wording reads like a
+   bug to someone who was ahead on the board, so always name the player. */
+function roleName(color) {
+  if (!state || state.ai_color === null || state.ai_color === undefined) return null;
+  return color === state.ai_color ? "AI" : "you";
+}
+function dot(color) { return color === BLACK ? "●" : "○"; }
+function sideName(color) {                       // "Black (you)" / "White (AI)" / "Black"
+  const role = roleName(color);
+  return (color === BLACK ? "Black" : "White") + (role ? " (" + role + ")" : "");
+}
+function playerSubject(color) {                  // for a sentence: "You" / "The AI" / "Black"
+  const role = roleName(color);
+  if (role === "you") return "You";
+  if (role === "AI") return "The AI";
+  return color === BLACK ? "Black" : "White";
+}
+function verdict(r) {
+  if (r.winner === "Draw") return { head: "Draw", sub: "Level after the komi." };
+  const w = r.winner === "Black" ? BLACK : WHITE;
+  const role = roleName(w);
+  const head = playerSubject(w) + (role === "you" ? " win" : " wins");
+  return { head, sub: head + " by " + r.margin.toFixed(1) + " points", color: w };
+}
+/* The single way the count can surprise you: komi only ever helps White. */
+function whyLine(r) {
+  const boardLead = r.black_total - (r.white_total - r.komi);
+  const board = `${dot(BLACK)} ${r.black_total.toFixed(1)} – ${dot(WHITE)} ${(r.white_total - r.komi).toFixed(1)}`;
+  if (r.winner === "Draw") return `Level once the ${r.komi} komi is added (${board}).`;
+  const w = r.winner === "Black" ? BLACK : WHITE;
+  if (r.winner === "White" && boardLead > 0) {
+    return `${playerSubject(BLACK)} surrounded ${boardLead.toFixed(1)} more points (${board} before komi), but White is`
+      + ` given the ${r.komi} komi for moving second, and that is what decides this game. Playing Black means you`
+      + ` have to lead by more than ${r.komi} to win — the scoreboard says so the moment a game ends.`;
+  }
+  return `${playerSubject(w)} won outright: ${board} before komi, and the ${r.komi} komi `
+    + (w === WHITE ? "only widens White's lead." : "did not close that gap.");
+}
+
 function updatePanel() {
   if (!state) return;
   const turnEl = $("#turn");
-  const dot = state.turn === BLACK ? "●" : "○";
-  const who = state.turn === BLACK ? "Black" : "White";
+  const cb = state.captured_by || {};
   if (state.over) {
-    turnEl.textContent = "Game over";
+    turnEl.textContent = state.result ? "Game over — " + verdict(state.result).sub : "Game over";
     turnEl.classList.remove("thinking");
   } else if (busy && state.ai_color !== null && state.turn === state.ai_color) {
-    turnEl.textContent = dot + " AI is thinking…";
+    turnEl.textContent = dot(state.turn) + " AI is thinking…";
     turnEl.classList.add("thinking");
   } else {
-    const suffix = state.ai_color !== null && state.turn === state.human_color ? " — your move" : "";
-    turnEl.textContent = dot + " " + who + suffix;
+    const role = roleName(state.turn);
+    turnEl.textContent = dot(state.turn) + " " + sideName(state.turn)
+      + (role === "you" ? " — your move" : role === "AI" ? " — AI to move" : "");
     turnEl.classList.remove("thinking");
   }
   $("#thinking").classList.toggle("hidden", !(busy && state.ai_color !== null));
-  const cb = state.captured_by;
   $("#meta").innerHTML =
-    `Moves: ${state.move_number} &nbsp;·&nbsp; Komi: ${state.komi}<br>` +
-    `Captured — ● Black: ${cb["1"] || 0} &nbsp; ○ White: ${cb["-1"] || 0}` +
+    `Moves: ${state.move_number} &nbsp;·&nbsp; Komi +${state.komi} to White, so Black must lead the board by more than ${state.komi}<br>` +
+    `Prisoners taken — ${dot(BLACK)} Black ${cb["1"] || 0} &nbsp; ${dot(WHITE)} White ${cb["-1"] || 0}` +
     (state.over && state.result
-      ? `<br><b>${state.result.winner}</b> wins by ${state.result.margin.toFixed(1)}`
+      ? `<br><b>${verdict(state.result).sub}</b><br>` +
+        `<span class="legend">${dot(BLACK)} green diamonds are Black's territory, ${dot(WHITE)} blue are White's</span>`
       : "");
   $("#ai-only").classList.toggle("hidden", mode2P);
   $("#m-ai").classList.toggle("on", !mode2P);
   $("#m-2p").classList.toggle("on", mode2P);
   if (state.over) showScoreDialog();
 }
+
+function clearLog() { $("#log").innerHTML = ""; }
 
 function log(msg, err = false) {
   const li = document.createElement("li");
@@ -516,8 +548,8 @@ $("#btn-new").onclick = async () => {
       level: $("#level").value,
       human_color: +$("#color").value,
     }));
-    log(`<b>New game</b> · ${$("#size").value}×${$("#size").value} · ${mode2P ? "2 players" : $("#level").value + " AI"}`);
-  } catch (e) {
+    clearLog();
+    log(`<b>New game</b> · ${$("#size").value}×${$("#size").value} · ${mode2P ? "2 players" : $("#level").value + " AI"}`);  } catch (e) {
     hint("Could not start a game — reload the page.");
   } finally {
     busy = false; updatePanel();
@@ -528,8 +560,7 @@ $("#btn-pass").onclick = async () => {
   if (busy || !state || state.over) return;
   busy = true; updatePanel();
   try {
-    await playHuman(() => api("/api/pass", { ai: false }));
-    log("Pass");
+    await playHuman("passed", () => api("/api/pass", { ai: false }));
   } catch (e) {
     hint("Server unreachable — reload the page.");
   } finally {
@@ -572,14 +603,26 @@ Black goes first; White gets 7.5 komi compensation for moving second.
 Stones never move — they are only removed when captured.
 The game ends after two passes in a row, then the board is counted.
 </pre>
+<h3>Who wins</h3>
+<pre>Each side counts the points it holds: its stones on the board plus the empty
+points only its stones reach. White is then handed 7.5 extra points ("komi")
+because Black had the first move.
+
+That komi is the one thing that surprises people: if you play Black and finish
+ahead on the board by 7 points or fewer, the game still goes to White. The
+scoreboard at the end of every game shows the arithmetic and says out loud when
+komi is what decided it. Captures are not added separately — a stone you take
+is a stone that no longer counts for your opponent.
+</pre>
 <h3>The rules, in math</h3>
 <pre class="formula">Liberties    L(G) = { p empty : p orthogonally adjacent to group G }
 Capture      |L(G)| = 0  ⟹  G is removed from the board
 Suicide      legal ⟺ after captures, |L(own group)| ≥ 1
 Ko           new position ∉ { every position so far }  (super-ko)
-Area score   S(B) = stones(B) + territory(B)
-             S(W) = stones(W) + territory(W) + komi (7.5)
-             stones(B)+stones(W)+terr(B)+terr(W)+dame = size²
+Area score   S(B) = stones(B) + territory(B) + neutral(B)
+             S(W) = stones(W) + territory(W) + neutral(W) + komi (7.5)
+             S(B) + S(W) - komi = size²   (every point is accounted for)
+             Black therefore has to win by 8 or more: komi is worth 7.5.
 </pre>
 <h3>The math behind the AI</h3>
 <pre class="formula">Influence    I_c(p) = Σ γ^d(p,s)      γ = 0.62, d = Manhattan distance
@@ -600,14 +643,27 @@ function showScoreDialog() {
   const r = state.result;
   if (!r || showScoreDialog.shown) return;
   showScoreDialog.shown = true;
+  const v = verdict(r);
+  const cb = state.captured_by || {};
+  const n = (s, w) => String(s).padStart(w);
+  const row = (color, stones, terr, neutral, komi, total) =>
+    `<tr><td>${dot(color)} ${sideName(color)}</td><td>${n(stones, 6)}</td><td>${n(terr, 6)}</td>` +
+    `<td>${n(neutral, 6)}</td><td>${n(komi, 6)}</td><td>${n(total.toFixed(1), 6)}</td></tr>`;
+  $("#score-title").textContent = v.color ? v.head + " by " + r.margin.toFixed(1) + " points" : v.head;
+  const role = v.color === undefined ? "draw" : roleName(v.color) || "even";
+  $("#score-title").className = "result-" + role;
   $("#score-text").innerHTML = `
-<pre class="formula">Black:  ${r.black_stones} stones + ${r.black_territory} territory            = ${r.black_total.toFixed(1)}
-White:  ${r.white_stones} stones + ${r.white_territory} territory + ${r.komi} komi = ${r.white_total.toFixed(1)}
-Neutral points (dame): ${r.dame}
-
-Winner: ${r.winner} by ${r.margin.toFixed(1)} points</pre>`;
+<table class="score-table">
+  <tr><th></th><th>stones</th><th>area</th><th>neutral</th><th>komi</th><th>total</th></tr>
+  ${row(BLACK, r.black_stones, r.black_territory, r.black_dame, "—", r.black_total)}
+  ${row(WHITE, r.white_stones, r.white_territory, r.white_dame, r.komi, r.white_total)}
+</table>
+<p class="why">Prisoners taken (${dot(BLACK)} ${cb["1"] || 0} &nbsp; ${dot(WHITE)} ${cb["-1"] || 0}) are already
+included: under area scoring a captured stone simply stops counting for the player who lost it.
+The two totals add up to exactly ${state.size * state.size} points plus the ${r.komi} komi, so nothing is hidden.</p>
+<p class="why"><b>${whyLine(r)}</b></p>`;
   $("#dlg-score").showModal();
-  log(`<b>${r.winner}</b> wins by ${r.margin.toFixed(1)} points`);
+  log(`${v.sub} — ${dot(BLACK)} ${r.black_total.toFixed(1)} / ${dot(WHITE)} ${r.white_total.toFixed(1)}`);
 }
 
 /* ------------------------------------------------------------------ learn */
@@ -628,7 +684,7 @@ const LESSONS = [
     d: "After a capture, recreating the previous position is forbidden:\n\n    position(new) ∉ { positions so far }\n\nBlack captures the lone white stone; White must play elsewhere before recapturing.",
     s: [[3, 2, BLACK], [2, 3, BLACK], [3, 4, BLACK], [3, 3, WHITE], [4, 2, WHITE], [4, 4, WHITE], [5, 3, WHITE]], marks: [[4, 3]] },
   { t: "6 · Territory & scoring",
-    d: "Two passes end the game. Regions touching one colour only become territory:\n\n    S(B) = stones(B) + territory(B)\n    S(W) = stones(W) + territory(W) + 7.5\n\nThe shaded diamonds show each side's territory; the middle column is neutral dame.",
+    d: "Two passes end the game. Regions touching one colour only become territory:\n\n    S(B) = stones(B) + territory(B) + neutral(B)\n    S(W) = stones(W) + territory(W) + neutral(W) + 7.5\n\nThe shaded diamonds show each side's territory; the middle column is neutral dame, shared out in filling order. Note the komi: Black has to lead by more than 7.5 to win — being ahead on the board is not the same as winning.",
     s: [0, 1, 2, 3, 4, 5, 6, 7, 8].flatMap((y) => [[3, y, BLACK], [5, y, WHITE]]), terr: true },
   { t: "7 · The math of the Master",
     d: "Easy/Medium/Hard use the evaluation function; Master runs PUCT Monte-Carlo Tree Search:\n\n    child = argmax W/N + c·P(a)·√ΣN/(1+N)\n\nthousands of random playouts, each scored by the area formula, feed the win rates W/N. Try it on 9×9!",

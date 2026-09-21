@@ -122,6 +122,18 @@ dialog::backdrop { background: #05070a99; backdrop-filter: blur(2px); }
   padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.55; white-space: pre-wrap;
 }
 .dlg-body .formula { color: #9fd0ff; }
+
+.score-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+.score-table th, .score-table td { padding: 6px 8px; text-align: right; white-space: nowrap; }
+.score-table th:first-child, .score-table td:first-child { text-align: left; }
+.score-table th { color: var(--muted); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--line); }
+.score-table td { font-size: 15px; }
+.why { color: var(--muted); font-size: 14px; line-height: 1.55; }
+.why b { color: var(--ink); }
+#score-title.result-you { color: var(--green); }
+#score-title.result-AI, #score-title.result-draw { color: var(--accent); }
+.legend { color: var(--muted); font-size: 12px; }
+
 .dlg-body button { margin-top: 12px; }
 .lesson-nav { display: flex; gap: 8px; margin-top: 10px; }
 .lesson-nav button { flex: 1; }
@@ -130,11 +142,12 @@ dialog::backdrop { background: #05070a99; backdrop-filter: blur(2px); }
 .hidden { display: none !important; }
 
 .credit {
-  text-align: center; padding: 10px 0 22px; font-size: 13px;
+  text-align: center; padding: 14px 0 24px; font-size: 14px;
   color: var(--muted); letter-spacing: .2px;
 }
-.credit b { color: var(--accent); font-weight: 600; }
-.dlg-credit { padding: 4px 0 0; }
+.credit b { color: var(--accent); font-weight: 600; font-size: 15px; }
+footer.credit { border-top: 1px solid var(--line); margin-top: 18px; }
+.dlg-credit { padding: 4px 0 0; border-top: none; margin-top: 10px; font-size: 13px; }
 
 @media (max-width: 900px) {
   main { flex-direction: column; }

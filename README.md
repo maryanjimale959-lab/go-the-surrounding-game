@@ -131,7 +131,9 @@ These are the rules the engine enforces — all of them.
   **Black always plays first.**
 * Because moving second is a real disadvantage, White is compensated with
   **komi** — extra points added at counting time. This game uses **7.5**
-  (the modern standard). The half point guarantees the game cannot end tied.
+  (the modern standard). The half point guarantees the game cannot end tied,
+  and it means Black has to lead the board by **8 or more** to win: surrounding
+  more points than your opponent is not, by itself, winning the game.
 
 ### 2. Placing and immutability
 * On your turn you place exactly one stone of your colour on any empty
@@ -148,8 +150,10 @@ These are the rules the engine enforces — all of them.
 
 ### 4. Capture
 * When the last liberty of a group is filled, the whole group is **removed**
-  from the board immediately, and the capturing player keeps the stones as
-  prisoners for scoring purposes.
+  from the board immediately. The capturer sets the stones aside as prisoners —
+  under area scoring they are not added to the score, they simply stop counting
+  for the player who lost them, and the points they used to hold become
+  territory.
 * A single stone in the corner has 2 liberties, on the edge 3, in the middle
   4 — which is why corners are the cheapest place to start a territory fight.
 
@@ -179,18 +183,25 @@ These are the rules the engine enforces — all of them.
   dying; the points stay neutral.
 
 ### 8. Ending and scoring
-* The game ends after two passes in a row, or the moment you press **Score**.
+* The game ends after two passes in a row, or the moment you press **Count score**.
 * Every empty region bordered by exactly one colour becomes that colour's
-  **territory**. Regions touching both colours are **dame** (neutral points)
-  and belong to nobody.
+  **territory**. Regions touching both colours are **dame** (neutral points).
+  A game can end while dame are still open, so they are shared out in filling
+  order (Black first) rather than thrown away.
 * This game counts with **area scoring (Chinese rules)**:
 
   ```
-  Score(Black) = stones on board(Black) + territory(Black)
-  Score(White) = stones on board(White) + territory(White) + komi(7.5)
+  Score(Black) = stones on board(Black) + territory(Black) + neutral(Black)
+  Score(White) = stones on board(White) + territory(White) + neutral(White) + komi(7.5)
   ```
 
-* The higher total wins; the margin is printed with the full breakdown.
+* The higher total wins. Captures are not added on top: a stone you take is a
+  stone that stops counting for your opponent.
+* **Komi is the one thing that surprises people.** White's 7.5 compensates for
+  moving second, so Black has to lead by more than 7.5 — it is entirely
+  possible to surround more of the board and still lose. Both front ends print
+  the count before and after komi and say plainly when komi decided the game,
+  and name the winner as *you* / *the AI* rather than as a bare colour.
   (Japanese *territory* scoring differs only in how prisoners are tallied —
   with correct play the winner is nearly always the same.)
 
@@ -221,14 +232,27 @@ stones(B) + stones(W) + territory(B) + territory(W) + dame = size²
 **Area scoring (Chinese rules, komi for White).**
 
 ```
-S(B) = stones(B) + territory(B)
-S(W) = stones(W) + territory(W) + 7.5
+S(B) = stones(B) + territory(B) + neutral(B)
+S(W) = stones(W) + territory(W) + neutral(W) + 7.5
+S(B) + S(W) − komi = size²
 margin = |S(B) − S(W)|
 ```
 
 Territory is computed by a flood fill over the empty points: each connected
 empty region collects the set of colours touching it, and a region is owned
-only when that set has exactly one member.
+only when that set has exactly one member. Regions touched by both colours
+(or by nothing) are *dame* — neutral points. A game can end on two passes
+while those points are still open, so they are shared out in filling order
+(Black fills first) instead of being dropped, which is what keeps the
+invariant above exact.
+
+**Komi, and why "ahead on the board" is not the same as winning.** White is
+given 7.5 points for letting Black move first, and the half point removes the
+possibility of a draw. Black therefore has to lead by more than 7.5: a player
+who surrounds more of the board and still loses by komi is counted correctly,
+and both the web and desktop score dialogs say so out loud, showing the count
+before and after komi. Captures are never added on top — a stone you take is a
+stone that stops counting for your opponent.
 
 **Influence fields.** Every stone radiates a field that decays geometrically
 with Manhattan distance *d*:
@@ -295,7 +319,7 @@ the single-ply view for tree search.
 | New Game | Reset with the current settings |
 | Pass | Give up your turn — two passes in a row end the game |
 | Undo | Take back your move and the AI's reply |
-| Score | End the game now and count the board (asks for confirmation) |
+| Count score | End the game now and count the board (asks for confirmation) |
 | **Learn Go** | 7-lesson interactive course: liberties, capture, suicide, ko, territory, MCTS |
 | Rules & Math | The full rule set plus every equation the engine and AI use |
 
