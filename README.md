@@ -5,11 +5,15 @@
 A complete implementation of the ancient board game **Go** (Baduk / Weiqi),
 written from scratch with no third-party dependencies: the full rules, the
 mathematics behind scoring and the AI, an interactive **Learn Go** course,
-and two front-ends — a 3D isometric **Tkinter desktop app** and a modern
-responsive **web app** you can play from phone, tablet or PC.
+and three front-ends — a **browser game that needs no server at all**, a 3D
+isometric **Tkinter desktop app**, and a **local web app** for the same Wi-Fi.
+
+**Play it now, nothing to install:**
+<https://maryanjimale959-lab.github.io/go-the-surrounding-game/>
 
 ```
-python web.py      # → http://localhost:8763   (play in the browser)
+# online: open the link above (the engine and AI run inside the page)
+python web.py      # → http://localhost:8763   (same page, served by Python)
 python main.py     # → desktop window with a 3D isometric wooden board
 ```
 
@@ -34,17 +38,31 @@ python main.py     # → desktop window with a 3D isometric wooden board
 | Feature | Where |
 | --- | --- |
 | Rules engine: groups, liberties, capture, suicide, super-ko, area scoring | `engine.py` |
-| Heuristic AI (Easy / Medium / Hard) built on influence fields and an evaluation function | `ai.py` |
-| MCTS "Master" AI (PUCT tree search + random playouts) | `mcts.py` |
+| The same engine, ported to JavaScript so the page can play with no server | `static/engine.js` |
+| Heuristic AI (Easy / Medium / Hard) built on influence fields and an evaluation function | `ai.py` → `static/ai.js` |
+| MCTS "Master" AI (PUCT tree search + random playouts) | `mcts.py` → `static/ai.js` |
 | Web server (stdlib HTTP + JSON API) | `web.py` |
-| Web front-end: canvas board, animations, sound, dialogs | `static/` |
+| The game server re-implemented inside the browser (same JSON, same routes) | `static/game_server.js` |
+| Web front-end: canvas board, animations, sound, dialogs | `index.html`, `static/` |
 | Desktop app: isometric 3D board, sidebar, Learn course | `main.py`, `ui.py` |
-| Rule + AI tests and a full self-play game | `tests.py` |
+| Rule + AI tests, self-play, and a Python↔JavaScript engine comparison | `tests.py`, `tests/`, `tests_js.py` |
 
 No `pip install` is required for anything. Python 3.8+ is enough; Tkinter is
 only needed for the desktop window (on Debian/Ubuntu: `sudo apt install python3-tk`).
+The web game needs neither: it is plain HTML + JavaScript, so it runs on a
+phone, a tablet, or a laptop that has no Python on it at all.
 
 ## Install and run
+
+### Play it (no install)
+
+Open <https://maryanjimale959-lab.github.io/go-the-surrounding-game/>. GitHub
+Pages is a static host — it cannot run Python — so `game_server.js` takes
+`web.py`'s job and the rules engine, the evaluation AI and the MCTS all run in
+the tab. Every device gets its own board, and it keeps working on a phone on
+mobile data.
+
+### Run it from the source
 
 ```bash
 git clone <this-repo-url>
@@ -63,8 +81,13 @@ On your phone:  http://192.168.x.x:8763   (same Wi-Fi)
 ```
 
 Open either one. The phone URL works because the server binds to `0.0.0.0`,
-so any device on the same network can join — the game state lives on the
-server, so two people can also pass the phone back and forth.
+so any device on the same network can join — and there the board lives on the
+server, so two people can pass the phone back and forth and both see the same
+game.
+
+`app.js` decides which backend to use by itself: it asks `api/state` at start-up
+and takes the JSON answer (Python) or falls back to the in-page engine (Pages).
+One probe, two deployments, identical markup.
 
 ```bash
 python main.py                # desktop app instead
@@ -75,27 +98,24 @@ python main.py                # desktop app instead
 The project is layered so that the rules exist exactly once:
 
 ```
-        ┌───────────────────────────┐        ┌──────────────────────────┐
-        │  web.py  (HTTP + JSON)    │        │  ui.py / main.py        │
-        │  static/  (canvas board)  │        │  Tkinter window          │
-        └─────────────┬─────────────┘        └───────────┬──────────────┘
-                      │                                  │
-                      ▼                                  ▼
-                 ┌────────────────────────────────────────────┐
-                 │  engine.py   Game(size, komi)              │
-                 │  the only place a move can be accepted     │
-                 └───────┬──────────────────────┬─────────────┘
-                         │                      │
-                         ▼                      ▼
-                    ai.py (heuristic)      mcts.py (PUCT search)
+   ┌─────────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐
+   │ GitHub Pages, no server │  │ web.py  (HTTP+JSON) │  │ ui.py / main.py │
+   │ engine/ai/MCTS run here │  │ static/ canvas board│  │ Tkinter window  │
+   └────────────┬────────────┘  └──────────┬──────────┘  └────────┬────────┘
+                ▼                          ▼                      ▼
+     static/engine.js ◄── identical rules ──►  engine.py   Game(size, komi)
+     static/ai.js     ◄──  identical math  ──►  ai.py / mcts.py
+                (the rules exist exactly once per language — tests_js.py proves
+                 that the Python and JavaScript copies can never quietly differ)
 ```
 
 **A move, step by step (web app):**
 
 1. You click an intersection. `app.js` converts the pixel position back into
-   grid coordinates (`x`, `y`) and `POST`s `/api/move`.
+   grid coordinates (`x`, `y`) and asks for `api/move`.
 2. `web.py` holds a single shared `Game` object behind a `threading.Lock`, so
-   two browsers can never corrupt the same board.
+   two browsers can never corrupt the same board. Opened from Pages there is no
+   server, and `game_server.js` answers the same route from the same fields.
 3. `Game.play(x, y)` asks `is_legal()` — occupied? suicide? does the resulting
    position repeat an earlier one (super-ko)? If anything fails, the reason
    string travels back to the browser and appears as a toast.
@@ -106,7 +126,8 @@ The project is layered so that the rules exist exactly once:
 5. Because you are playing Black and the AI is White, `_ai_turn()` runs the
    selected engine (`GoAI` or `MCTS`) inside the same request and appends the
    AI's move. The JSON response therefore contains **both** stones, so the
-   board never shows a half-finished turn.
+   board never shows a half-finished turn. (`ai:false` holds the reply back for
+   one beat, which is what lets you see your own stone land first.)
 6. The front-end diffs the returned board against the previous one, pops the
    new stones in with a 140 ms `easeOutBack` animation, and plays a short
    WebAudio "click" — the sound of a stone hitting wood.
@@ -116,9 +137,18 @@ The project is layered so that the rules exist exactly once:
 top, so `engine.move_name(19, 3, 3)` returns `"D4"`. Both boards print `1`
 on the top row and `A` on the left column.
 
-**Two front-ends, one brain.** The Tkinter app calls `Game` and `GoAI`
-directly in-process — no HTTP, no JSON. Both apps render the same rules and
-report the same legality reasons.
+**Three front-ends, one brain.** The Tkinter app calls `Game` and `GoAI`
+directly in-process — no HTTP, no JSON. The Python server does the same over
+JSON. The Pages build calls `static/engine.js`, which is the same rules
+ported line for line: groups, the capture-before-suicide order, super-ko keys,
+the dame split, the identical score dictionary. `python tests_js.py` replays
+24 random games through both engines and diffs every field, so the two can
+never quietly disagree about who captured what.
+
+**Search that does not freeze the page.** `ai.js` and the MCTS are `async` and
+`await sleep(0)` between iterations, so the board, the "AI is thinking" pulse
+and the phone's own UI stay responsive while thousands of playouts run. Master
+budgets 2.5 seconds on a phone instead of blocking.
 
 ## The complete rules of Go
 
@@ -326,28 +356,49 @@ the single-ply view for tree search.
 ## Tests
 
 ```bash
-python tests.py
+python tests.py        # rules, AI self-play, MCTS
+python tests_js.py     # the JavaScript engine must agree with the Python one
+node tests/game_server.test.js     # the in-browser server + all four AI levels
 ```
 
-Covers: liberty counting, group merging, capture of a whole group, the
-suicide ban, the capture-that-is-not-suicide exception, super-ko rejection,
-undo, the territory flood fill, the `size²` partition invariant, a full
-heuristic-AI self-play game, and MCTS legality plus a capture-sense check
-(the Master must take a free stone). The web API was additionally verified
-end-to-end in a headless browser: play-on-load vs AI, Master on 19×19 as
-White, scoring, game-over hints, and the two-player mode staying silent.
+`tests.py` covers: liberty counting, group merging, capture of a whole group,
+the suicide ban, the capture-that-is-not-suicide exception, super-ko rejection,
+undo, the territory flood fill, the `size²` partition invariant, the fact that
+komi can flip a board lead, a full heuristic-AI self-play game, and MCTS
+legality plus a capture-sense check (the Master must take a free stone).
+
+`tests_js.py` plays 24 random games (with passes and undos mixed in) in Python,
+replays the exact same move lists in `static/engine.js` under Node, and diffs
+board, turn, move count, passes, prisoners, last move, the full legal-move list
+and the score breakdown. It asserts `S(B) + S(W) − komi == size²` on both
+sides. `tests/game_server.test.js` then drives `game_server.js` through the
+same JSON routes the page uses and times every AI level on 9×9 and 19×19.
+
+The web front-ends were additionally verified end-to-end in a headless browser,
+twice: against `python web.py`, and against a plain static file server with no
+backend at all (the GitHub Pages case) — load, play, AI pacing, undo, pass,
+Count score, the result naming the winner, territory shading, Master on a phone
+viewport, and no console errors.
 
 ## Project layout
 
 ```
+index.html  the web page (also what GitHub Pages serves)
 main.py     desktop entry point (Tkinter)
-web.py      web server entry point (stdlib HTTP + JSON API)
+web.py      optional local web server (stdlib HTTP + JSON API)
 ui.py       Tkinter board, sidebar, dialogs (rules text lives here)
-static/     web front-end: index.html, app.js, style.css
+static/     web front-end
+  app.js        canvas board, bowls, dialogs, Learn course, backend probe
+  engine.js     the rules, ported from engine.py
+  ai.js         evaluation AI + PUCT MCTS, ported from ai.py / mcts.py
+  game_server.js  web.py's routes, running inside the tab
+  style.css     theme
 engine.py   rules: groups, liberties, captures, ko, suicide, scoring
 ai.py       influence-field + evaluation-function opponent (Easy–Hard)
 mcts.py     PUCT Monte-Carlo Tree Search opponent (Master)
 tests.py    rule-engine tests, AI self-play, MCTS checks
+tests_js.py Python ↔ JavaScript engine comparison
+tests/      JavaScript-side tests (compare_engine.js, game_server.test.js)
 ```
 
 ## Beginner strategy

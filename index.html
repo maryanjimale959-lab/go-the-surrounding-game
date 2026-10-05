@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Go — the Surrounding Game</title>
+<meta name="description" content="Play Go (Baduk / Weiqi) against four AI levels, in the browser on any device. Rules engine, heuristic evaluation and MCTS written from scratch. Created by Maryam J.">
+<meta name="author" content="Maryam J.">
+<meta property="og:title" content="Go — the Surrounding Game">
+<meta property="og:description" content="A complete Go game you can play on your phone or laptop: rules, ko, scoring, four AI levels.">
+<meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23d8a04a'/%3E%3Ccircle cx='12' cy='12' r='6' fill='%23111'/%3E%3Ccircle cx='21' cy='20' r='6' fill='%23f6f2e8'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="static/style.css">
 </head>
 <body>
 <header>
@@ -86,6 +91,9 @@
 <dialog id="dlg-score"><div class="dlg-body"><h2 id="score-title">Final score</h2><div id="score-text"></div><p class="credit dlg-credit">Created by <b>Maryam J.</b></p><form method="dialog"><button class="primary">Close</button></form></div></dialog>
 <dialog id="dlg-learn"><div class="dlg-body" id="dlg-learn-body"></div></dialog>
 
-<script src="app.js"></script>
+<script src="static/engine.js"></script>
+<script src="static/ai.js"></script>
+<script src="static/game_server.js"></script>
+<script src="static/app.js"></script>
 </body>
 </html>

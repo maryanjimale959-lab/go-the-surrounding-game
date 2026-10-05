@@ -12,9 +12,18 @@ const pop = new Map();            // "x,y" -> animation start time
 let animFrame = null;
 let audio = null;
 
-/* ------------------------------------------------------------------ api */
+/* ------------------------------------------------- which backend answers? */
+/* The same page runs two ways.  Opened through `python web.py` the Python
+   server holds the game.  Opened from a static host such as GitHub Pages there
+   is no Python at all, so game_server.js plays the part: the rules engine, the
+   evaluation AI and the MCTS all run in this tab.  One probe decides which. */
+let LOCAL = false;
+
+function urlFor(path) { return path.replace(/^\//, ""); }   // relative to this page
+
 async function api(path, body = {}) {
-  const res = await fetch(path, {
+  if (LOCAL) return GoLocalServer.handle(path, body);
+  const res = await fetch(urlFor(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -23,8 +32,23 @@ async function api(path, body = {}) {
 }
 
 async function refresh() {
-  const res = await fetch("/api/state");
+  if (LOCAL) { apply(await GoLocalServer.handle("/api/state")); return; }
+  const res = await fetch(urlFor("/api/state"));
   apply(await res.json());
+}
+
+async function boot() {
+  try {
+    const res = await fetch(urlFor("/api/state"), { headers: { Accept: "application/json" } });
+    const ctype = res.headers.get("content-type") || "";
+    if (!res.ok || ctype.indexOf("json") < 0) throw new Error("no game server here");
+    apply(await res.json());
+    log(`<b>Connected</b> · ${res.url.replace(/^https?:\/\//, "").slice(0, 42)}`);
+  } catch (e) {
+    LOCAL = true;
+    apply(await GoLocalServer.handle("/api/state"));
+    log("<b>Board in this tab</b> · the rules engine, the AI and the MCTS are running in your browser, so it works on any device with no server");
+  }
 }
 
 function apply(data) {
@@ -428,7 +452,7 @@ canvas.addEventListener("click", async (ev) => {
   try {
     await playHuman(ptName([p.x, p.y]), () => api("/api/move", { x: p.x, y: p.y, ai: false }));
   } catch (e) {
-    hint("Server unreachable — reload the page.");
+    hint(LOCAL ? "Press New Game to start a fresh board." : "Server unreachable — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
@@ -573,7 +597,7 @@ $("#btn-new").onclick = async () => {
     }));
     clearLog();
     log(`<b>New game</b> · ${$("#size").value}×${$("#size").value} · ${mode2P ? "2 players" : $("#level").value + " AI"}`);  } catch (e) {
-    hint("Could not start a game — reload the page.");
+    hint(LOCAL ? "Press New Game to start a fresh board." : "Could not start a game — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
@@ -585,7 +609,7 @@ $("#btn-pass").onclick = async () => {
   try {
     await playHuman("passed", () => api("/api/pass", { ai: false }));
   } catch (e) {
-    hint("Server unreachable — reload the page.");
+    hint(LOCAL ? "Press New Game to start a fresh board." : "Server unreachable — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
@@ -598,7 +622,7 @@ $("#btn-undo").onclick = async () => {
     apply(await api("/api/undo"));
     log("Undo");
   } catch (e) {
-    hint("Server unreachable — reload the page.");
+    hint(LOCAL ? "Press New Game to start a fresh board." : "Server unreachable — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
@@ -612,7 +636,7 @@ $("#btn-score").onclick = async () => {
     apply(await api("/api/score"));
     log("Score requested — game ended");
   } catch (e) {
-    hint("Server unreachable — reload the page.");
+    hint(LOCAL ? "Press New Game to start a fresh board." : "Server unreachable — reload the page.");
   } finally {
     busy = false; updatePanel();
   }
@@ -781,4 +805,4 @@ $("#btn-learn").onclick = () => {
 
 /* ------------------------------------------------------------------ boot */
 window.addEventListener("resize", paint);
-refresh();
+boot();

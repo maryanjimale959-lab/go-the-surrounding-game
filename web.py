@@ -3,6 +3,11 @@
 Open http://localhost:8763 (or the LAN URL printed at startup) to play in
 any browser: desktop, tablet or phone on the same Wi-Fi.
 
+The page itself needs no server: index.html + static/*.js hold a full port of
+this engine, the AI and the MCTS, so the same files can sit on a static host
+such as GitHub Pages (https://maryanjimale959-lab.github.io/go-the-surrounding-game/).
+app.js probes /api/state at start-up and plays here when the answer is JSON.
+
 API (JSON):
     GET  /api/state            full game state
     POST /api/new   {size, mode, level, human_color}
@@ -23,14 +28,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from ai import GoAI
-from engine import BLACK, EMPTY, Game, WHITE
+from engine import BLACK, Game, WHITE
 from mcts import MCTS
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8763
-STATIC = Path(__file__).parent / "static"
+ROOT = Path(__file__).parent
+STATIC = ROOT / "static"
 MCTS_SECONDS = 3.0
 
 CREATOR = "Maryam J."
+
+# whitelist: only these files are ever read off disk, from these two folders
+ASSETS = {
+    "index.html": "text/html; charset=utf-8",
+    "style.css": "text/css; charset=utf-8",
+    "app.js": "application/javascript; charset=utf-8",
+    "engine.js": "application/javascript; charset=utf-8",
+    "ai.js": "application/javascript; charset=utf-8",
+    "game_server.js": "application/javascript; charset=utf-8",
+}
 
 LOCK = threading.Lock()
 S = {
@@ -116,21 +132,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def _static(self, name, ctype):
+    def _asset(self, rel):
+        """Serve one whitelisted file: index.html from the repo root, the rest
+        from static/ (the page refers to its scripts as `static/x.js` so the
+        same markup works on a GitHub Pages sub-path)."""
+        if rel not in ASSETS:
+            self._send(404, {"ok": False, "error": "not found"})
+            return
+        base = ROOT if rel == "index.html" else STATIC
         try:
-            self._send(200, (STATIC / name).read_bytes(), ctype)
+            self._send(200, (base / rel).read_bytes(), ASSETS[rel])
         except OSError:
             self._send(404, {"ok": False, "error": "not found"})
 
     # ------------------------------------------------------------ routes
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path in ("/", "/index.html"):
-            self._static("index.html", "text/html; charset=utf-8")
-        elif path == "/app.js":
-            self._static("app.js", "application/javascript; charset=utf-8")
-        elif path == "/style.css":
-            self._static("style.css", "text/css; charset=utf-8")
+        if path in ("", "/"):
+            self._asset("index.html")
+        elif path == "/index.html":
+            self._asset("index.html")
+        elif path.startswith("/static/"):
+            self._asset(path[len("/static/"):])
         elif path == "/api/state":
             with LOCK:
                 # If a previous request died before the AI answered, catch up now.
