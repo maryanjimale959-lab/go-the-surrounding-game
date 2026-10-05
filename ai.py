@@ -20,13 +20,19 @@ with γ < 1, so each stone's pull falls off geometrically with distance.
 Hard mode additionally checks the opponent's strongest immediate reply:
 
     v_hard(m) = v(m) - w_reply · max_{m'} v_opp(m')
+
+Before anything is scored, candidates are filtered: a point whose empty region
+is bordered only by the mover's own colour adds nothing to S(mover), so it is
+dropped.  When that leaves the list empty the AI returns None — a pass — which
+is what lets a game reach its two-pass ending and be counted.
 """
 
 from __future__ import annotations
 
 import random
 
-from engine import BLACK, WHITE, EMPTY, _neighbours, find_group, simulate_move
+from engine import (BLACK, WHITE, EMPTY, _neighbours, find_group, region_owners,
+                    simulate_move)
 
 DECAY = 0.62
 INFLUENCE_RADIUS = 6
@@ -153,8 +159,18 @@ class GoAI:
         return score
 
     def _rank_candidates(self, game, inf_me, inf_opp):
+        """Score every candidate that is worth a stone.
+
+        A point inside the region the mover already owns is worth nothing under
+        area scoring — that ground is already counted — so those points are
+        dropped here rather than played.  When nothing else is left the mover
+        has no move to make and passes, which is what closes a game.
+        """
+        owners = region_owners(game.board, game.size)
         scored = []
         for x, y in self._candidates(game):
+            if owners.get((x, y)) == self.color:
+                continue
             s = self._score_move(game, x, y, inf_me, inf_opp)
             if s is not None:
                 scored.append((s, x, y))
@@ -193,7 +209,11 @@ class GoAI:
 
     # ------------------------------------------------------------ API
     def choose_move(self, game):
-        """Return (x, y) or None to pass."""
+        """Return (x, y) or None to pass.
+
+        None means "nothing on this board is worth another stone", which is
+        how a game reaches its two-pass ending and gets counted.
+        """
         inf_me = influence_map(game.board, self.color)
         inf_opp = influence_map(game.board, -self.color)
         scored = self._rank_candidates(game, inf_me, inf_opp)
@@ -206,8 +226,10 @@ class GoAI:
             scored = self._refine_with_reply(game, scored[:12])
 
         pool = scored[: cfg["pick"]]
+        if not pool:
+            return None
         best = max(pool, key=lambda t: t[0] + random.gauss(0, cfg["noise"]))
-        return (best[1], best[2]) if pool else None
+        return (best[1], best[2])
 
     def _refine_with_reply(self, game, my_scored):
         """v_hard(m) = v(m) - w_reply * best immediate enemy reply."""

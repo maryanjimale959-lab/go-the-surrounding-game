@@ -178,8 +178,14 @@
     }
 
     _rank(game, infMe, infOpp) {
+      /* Score every candidate that is worth a stone.  Ground the region's
+         border already belongs to us under area scoring, so standing on it
+         gains nothing: those points are dropped.  When nothing else is left
+         the AI has no move to make and passes, which closes the game. */
+      const owners = E.territoryMap(game.board, game.size);
       const scored = [];
       for (const [x, y] of this._candidates(game)) {
+        if (owners.get(x * game.size + y) === this.color) continue;
         const s = this._scoreMove(game, x, y, infMe, infOpp);
         if (s !== null) scored.push([s, x, y]);
       }
@@ -351,8 +357,13 @@
       const root = new Node(null, null, 1.0, -this.color);
       const moveCap = 2 * size * size;
 
+      /* Ground we already border is counted without a stone on it, so those
+         points never enter the tree.  With no root child left, Master passes
+         and the game ends on two passes. */
+      const owners = E.territoryMap(game.board, size);
       const priors = policy(game.board, size, this.color);
       for (const [prior, idx] of priors) {
+        if (owners.get(idx) === this.color) continue;
         const x = Math.floor(idx / size), y = idx % size;
         const sim = simulate(game.board, size, x, y, this.color);
         if (!sim || game.positions.has(keyOf(sim.board))) continue;
@@ -411,7 +422,8 @@
 
       let best = root.children[0];
       for (const c of root.children) if (c.visits > best.visits) best = c;
-      return { x: Math.floor(best.move / size), y: best.move % size };
+      const bx = Math.floor(best.move / size), by = best.move % size;
+      return { x: bx, y: by };
     }
 
     _policyChildren(game, node, path) {

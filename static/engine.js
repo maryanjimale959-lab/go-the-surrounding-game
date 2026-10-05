@@ -108,6 +108,18 @@
     return owners;
   }
 
+  /* True when the move only turns ground the mover already owns into a stone.
+     Under area scoring that point already counted for the mover, so the stone
+     gains nothing — the moment a human passes. engine.py has the same rule,
+     and it is what lets a game end on two passes with the borders closed. */
+  function fillsOwnTerritory(board, size, x, y, color) {
+    const idx = x * size + y;
+    if (board[idx] !== EMPTY) return false;
+    const sim = simulate(board, size, x, y, color);
+    if (!sim || sim.captured.size) return false;
+    return territoryMap(board, size).get(idx) === color;
+  }
+
   /* Area scoring; `komi` is White's compensation for moving second.
      Neutral points are shared in filling order, Black first, so the count is
      exact: black_total + white_total - komi === size*size. */
@@ -244,6 +256,6 @@
 
   global.GoEngine = {
     BLACK, WHITE, EMPTY, LETTERS, moveName, adj, newBoard, keyOf,
-    findGroup, simulate, territoryMap, scoreBoard, toNested, Game,
+    findGroup, simulate, territoryMap, fillsOwnTerritory, scoreBoard, toNested, Game,
   };
 })(typeof window !== "undefined" ? window : globalThis);

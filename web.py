@@ -109,6 +109,10 @@ def state_payload():
         d["result"] = g.final_score()
         d["territory"] = {f"{x},{y}": ("B" if o == BLACK else "W" if o == -BLACK else "dame")
                           for (x, y), o in g.territory_map().items()}
+    else:
+        # The same count, live: so you can see you are ahead while you play
+        # instead of only finding out at the end.
+        d["estimate"] = g.score()
     return d
 
 

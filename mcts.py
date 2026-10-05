@@ -23,7 +23,7 @@ import random
 import time
 
 from engine import (BLACK, WHITE, EMPTY, Game, _neighbours, copy_board,
-                    find_group, simulate_move)
+                    find_group, region_owners, simulate_move)
 
 CPUCT = 1.2
 POLICY_TEMP = 3.0
@@ -176,9 +176,17 @@ class MCTS:
         move_cap = 2 * game.size * game.size
 
         # precompute root children from policy (respecting real ko)
+        #
+        # Ground the search has already enclosed is counted whether or not we
+        # stand on it, so those points are dropped here.  When nothing else is
+        # left the tree has no root child and Master passes — that is what
+        # closes a game and lets the board be counted.
+        owners = region_owners(game.board, game.size)
         priors = _policy(game.board, self.color)
         legal_children = []
         for prior, x, y in priors:
+            if owners.get((x, y)) == self.color:
+                continue
             sim = simulate_move(game.board, x, y, self.color)
             if sim is None or game._key(sim[0]) in game.positions:
                 continue

@@ -97,6 +97,62 @@ def simulate_move(board, x, y, color):
     return nb, captured
 
 
+def region_owners(board, size):
+    """Flood fill the empty points: {(x, y): BLACK | WHITE | 'dame'}.
+
+    A region touching exactly one colour is that colour's territory; a region
+    touching both (or neither) is neutral.
+    """
+    visited = [[False] * size for _ in range(size)]
+    owners = {}
+    for sy in range(size):
+        for sx in range(size):
+            if board[sx][sy] != EMPTY or visited[sx][sy]:
+                continue
+            region = [(sx, sy)]
+            visited[sx][sy] = True
+            borders = set()
+            i = 0
+            while i < len(region):
+                cx, cy = region[i]
+                i += 1
+                for nx, ny in _neighbours(size, cx, cy):
+                    v = board[nx][ny]
+                    if v == EMPTY and not visited[nx][ny]:
+                        visited[nx][ny] = True
+                        region.append((nx, ny))
+                    elif v != EMPTY:
+                        borders.add(v)
+            if borders == {BLACK}:
+                owner = BLACK
+            elif borders == {WHITE}:
+                owner = WHITE
+            else:
+                owner = "dame"
+            for px, py in region:
+                owners[(px, py)] = owner
+    return owners
+
+
+def fills_own_territory(board, size, x, y, color):
+    """True when the move only turns ground the mover already owns into a stone.
+
+    Under area scoring that point was already counted for the mover, so the
+    stone changes the count by nothing — which is precisely the moment a human
+    passes.  Teaching the AI to recognise it is what lets a game end on two
+    passes with the borders closed, instead of both sides filling their own
+    areas until the board is full of neutral points.
+    """
+    if board[x][y] != EMPTY:
+        return False
+    sim = simulate_move(board, x, y, color)
+    if sim is None:
+        return False
+    if sim[1]:                       # it captures, so it is worth playing
+        return False
+    return region_owners(board, size).get((x, y)) == color
+
+
 class Game:
     def __init__(self, size: int = 19, komi: float = 7.5):
         self.size = size
@@ -190,37 +246,7 @@ class Game:
     # ---------------------------------------------------------- scoring
     def territory_map(self):
         """Classify every empty point: {(x, y): BLACK | WHITE | 'dame'}."""
-        size = self.size
-        board = self.board
-        visited = [[False] * size for _ in range(size)]
-        owners = {}
-        for sy in range(size):
-            for sx in range(size):
-                if board[sx][sy] != EMPTY or visited[sx][sy]:
-                    continue
-                region = [(sx, sy)]
-                visited[sx][sy] = True
-                borders = set()
-                i = 0
-                while i < len(region):
-                    cx, cy = region[i]
-                    i += 1
-                    for nx, ny in _neighbours(size, cx, cy):
-                        v = board[nx][ny]
-                        if v == EMPTY and not visited[nx][ny]:
-                            visited[nx][ny] = True
-                            region.append((nx, ny))
-                        elif v != EMPTY:
-                            borders.add(v)
-                if borders == {BLACK}:
-                    owner = BLACK
-                elif borders == {WHITE}:
-                    owner = WHITE
-                else:
-                    owner = "dame"
-                for px, py in region:
-                    owners[(px, py)] = owner
-        return owners
+        return region_owners(self.board, self.size)
 
     def score(self):
         """Area scoring breakdown (Chinese rules, komi for White).

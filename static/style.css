@@ -133,6 +133,9 @@ dialog::backdrop { background: #05070a99; backdrop-filter: blur(2px); }
 #score-title.result-you { color: var(--green); }
 #score-title.result-AI, #score-title.result-draw { color: var(--accent); }
 .legend { color: var(--muted); font-size: 12px; }
+/* the running count: the one line in the panel that should read as a score */
+.count { display: inline-block; margin-top: 6px; color: var(--text, #f2e8d5); font-size: 13px; }
+.count b { color: #ffd98a; font-weight: 700; }
 
 .dlg-body button { margin-top: 12px; }
 .lesson-nav { display: flex; gap: 8px; margin-top: 10px; }

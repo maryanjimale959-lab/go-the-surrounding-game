@@ -16,9 +16,13 @@ const E = globalThis.GoEngine;
 
 function snapshot(g) {
   const legal = [];
+  const fillB = [], fillW = [];
   for (let x = 0; x < g.size; x++)
-    for (let y = 0; y < g.size; y++)
+    for (let y = 0; y < g.size; y++) {
       if (g.isLegal(x, y).ok) legal.push([x, y]);
+      if (E.fillsOwnTerritory(g.board, g.size, x, y, 1)) fillB.push([x, y]);
+      if (E.fillsOwnTerritory(g.board, g.size, x, y, -1)) fillW.push([x, y]);
+    }
   legal.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   return {
     board: E.toNested(g.board, g.size),
@@ -29,6 +33,8 @@ function snapshot(g) {
     last_move: g.last_move ? [g.last_move[0], g.last_move[1]] : null,
     over: g.over,
     legal: legal,
+    fill_black: fillB,
+    fill_white: fillW,
     score: g.over ? g.finalScore() : null,
   };
 }

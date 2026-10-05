@@ -64,6 +64,8 @@
         const x = Math.floor(idx / g.size), y = idx % g.size;
         d.territory[x + "," + y] = o === BLACK ? "B" : o === WHITE ? "W" : "dame";
       });
+    } else {
+      d.estimate = g.score();      // the same count, live, while you play
     }
     return d;
   }

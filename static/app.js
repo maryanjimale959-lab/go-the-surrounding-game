@@ -530,6 +530,50 @@ function whyLine(r) {
     + (w === WHITE ? "only widens White's lead." : "did not close that gap.");
 }
 
+/* The running count, so you can see you are ahead while you are still playing
+   instead of only at the end.  It is the same area formula the final score
+   uses, komi included.
+
+   Early on almost the whole board is still open ground (dame), and the formula
+   hands half of it to each side — a number that means nothing yet, and that
+   reads as "the AI is ahead" on move one.  So until the borders are mostly
+   closed the panel only reports the ground that is genuinely enclosed, and
+   switches to the full count once there is little open ground left. */
+function liveCount(e) {
+  if (!e) return "";
+  const open = e.dame / (state.size * state.size);
+  if (open > 0.25) {
+    return `<br><span class="count">Enclosed so far — ${dot(BLACK)} ${sideName(BLACK)} ${e.black_territory}`
+      + ` &nbsp;·&nbsp; ${dot(WHITE)} ${sideName(WHITE)} ${e.white_territory}`
+      + ` — the rest of the board is still open ground</span>`;
+  }
+  const diff = e.black_total - e.white_total;
+  let lead;
+  if (diff === 0) lead = "Level";
+  else {
+    const who = playerSubject(diff > 0 ? BLACK : WHITE);
+    lead = who + (who === "You" ? " are" : " is") + " ahead by " + Math.abs(diff).toFixed(1);
+  }
+  return `<br><span class="count">Right now — ${dot(BLACK)} ${sideName(BLACK)} ${e.black_total.toFixed(1)}` +
+    ` &nbsp;·&nbsp; ${dot(WHITE)} ${sideName(WHITE)} ${e.white_total.toFixed(1)} (komi included)` +
+    ` — <b>${lead}</b></span>`;
+}
+
+/* One pass is only half an ending; say what the other half needs.  Your turn
+   with a pass already on the record means the other side is the one that
+   stopped playing. */
+function passHint() {
+  if (!state || state.over || !state.passes) return "";
+  if (state.ai_color !== null && state.turn === state.human_color) {
+    return `<br><span class="count">${playerSubject(state.ai_color)} has passed — it can see nothing left `
+      + `worth a stone. <b>Pass too and the board is counted.</b></span>`;
+  }
+  if (state.ai_color === null) {
+    return `<br><span class="count">One pass so far — pass again to end the game and count the board.</span>`;
+  }
+  return "";
+}
+
 function updatePanel() {
   if (!state) return;
   const turnEl = $("#turn");
@@ -553,7 +597,7 @@ function updatePanel() {
     (state.over && state.result
       ? `<br><b>${verdict(state.result).sub}</b><br>` +
         `<span class="legend">${dot(BLACK)} green diamonds are Black's territory, ${dot(WHITE)} blue are White's</span>`
-      : "");
+      : liveCount(state.estimate) + passHint());
   $("#ai-only").classList.toggle("hidden", mode2P);
   $("#m-ai").classList.toggle("on", !mode2P);
   $("#m-2p").classList.toggle("on", mode2P);
@@ -660,6 +704,12 @@ ahead on the board by 7 points or fewer, the game still goes to White. The
 scoreboard at the end of every game shows the arithmetic and says out loud when
 komi is what decided it. Captures are not added separately — a stone you take
 is a stone that no longer counts for your opponent.
+
+Ending is a rule, not a courtesy: a point inside ground your own stones already
+border is counted for you whether or not you stand on it, so playing there gains
+nothing. Both sides — the AI included — pass once nothing else is left to gain,
+and the two passes close the game. The panel says "The AI has passed — pass too
+and the board is counted" so you never miss the moment.
 </pre>
 <h3>The rules, in math</h3>
 <pre class="formula">Liberties    L(G) = { p empty : p orthogonally adjacent to group G }
@@ -736,6 +786,9 @@ const LESSONS = [
   { t: "7 · The math of the Master",
     d: "Easy/Medium/Hard use the evaluation function; Master runs PUCT Monte-Carlo Tree Search:\n\n    child = argmax W/N + c·P(a)·√ΣN/(1+N)\n\nthousands of random playouts, each scored by the area formula, feed the win rates W/N. Try it on 9×9!",
     s: [[4, 4, BLACK], [2, 6, WHITE], [6, 2, WHITE]] },
+  { t: "8 · The endgame — why passing is a move",
+    d: "Under area scoring, empty ground your own border already surrounds is counted for you with no stone standing on it. Here the black wall owns the two left columns and the white wall the two right ones: filling your own ground gains exactly nothing, so the only moves left worth playing are in the neutral middle.\n\n    point p belongs to colour c ⟺ every stone bordering p's region is c\n    playing at p adds 0 to S(c)  ⟹  pass\n\nWhen nothing is left to take, you pass; two passes in a row close the game and the board is counted. The AI obeys the same rule — it passes once its moves stop gaining, and the panel says so, so you can pass too instead of hammering at your own walls.\n\nThe running count follows the same logic: while open ground remains it reports the ground each side has actually enclosed, and it becomes the full score, komi included, once the borders are closed.",
+    s: [0, 1, 2, 3, 4, 5, 6, 7, 8].flatMap((y) => [[2, y, BLACK], [6, y, WHITE]]), terr: true },
 ];
 let lessonIdx = 0;
 

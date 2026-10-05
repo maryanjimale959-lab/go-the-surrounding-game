@@ -82,6 +82,17 @@ both colours (or nothing) are neutral points — dame. Because a game can
 end while dame are still open, they are shared out in filling order
 (Black first) so that no point of the board is simply thrown away.
 
+Ending is a rule, not a courtesy. Ground your own border already
+surrounds is counted for you with no stone standing on it, so a move
+inside your own territory gains exactly nothing:
+
+    p ∈ territory(c)  ⟹  S(c) does not change when c plays at p  ⟹  pass
+
+When nothing outside your own ground is left to take, you pass. The AI
+obeys the same rule — it drops points inside its own regions from its
+candidate list, and passes when that leaves it with nothing to play.
+That is what closes a game and gets your enclosed areas counted.
+
 SCORING (area / Chinese rules)
     S(Black) = stones(B) + territory(B) + neutral(B)
     S(White) = stones(W) + territory(W) + neutral(W) + 7.5
@@ -545,7 +556,42 @@ class GoApp:
                          if g.last_move else "Last move: pass")
         lines.append(f"Moves played: {g.move_number}")
         lines.append(f"Komi +{g.komi} to White, so Black must lead the board by more than {g.komi}")
+        if not g.over:
+            lines.append(self.live_count_line(g))
+            if g.passes:
+                lines.append(self.pass_line())
         self.info_label.configure(text="\n".join(lines))
+
+    def live_count_line(self, g):
+        """The running count, so you can see you are ahead while you play.
+
+        While most of the board is still open ground (dame) the area formula
+        simply splits it down the middle, which reads as a lead nobody has
+        earned — so early on only genuinely enclosed ground is reported, and
+        the full count appears once the borders are closing.
+        """
+        e = g.score()
+        b, w = self.name_of(BLACK), self.name_of(WHITE)
+        if e["dame"] > g.size * g.size * 0.25:
+            return (f"Enclosed so far — ● {b} {e['black_territory']}   "
+                    f"○ {w} {e['white_territory']}   (the rest is open ground)")
+        diff = e["black_total"] - e["white_total"]
+        if diff == 0:
+            lead = "level"
+        else:
+            who = self.name_of(BLACK if diff > 0 else WHITE)
+            lead = f"{who} {'are' if who == 'You' else 'is'} ahead by {abs(diff):.1f}"
+        return (f"Right now — ● {b} {e['black_total']:.1f}   ○ {w} {e['white_total']:.1f}"
+                f" (komi included)   {lead}")
+
+    def pass_line(self):
+        """One pass is only half an ending; say what the other half needs."""
+        if self.ai is None:
+            return "One pass so far — pass again to end the game and count the board."
+        if self.game.current == self.human_color:
+            return ("The AI has passed — it sees nothing left worth a stone. "
+                    "Pass too and the board is counted.")
+        return ""
 
     # ------------------------------------------------------------ dialogs
     def show_rules(self):
@@ -690,6 +736,21 @@ LESSONS = [
              "You know the rules and the math — go play!",
         setup=[(4, 4, BLACK), (2, 2, WHITE), (6, 6, BLACK), (6, 2, WHITE), (2, 6, BLACK)],
         current=WHITE, markers=[],
+    ),
+    dict(
+        title="8 · The endgame — why passing is a move",
+        text="Under area scoring the ground your own wall already borders is "
+             "yours without another stone: filling it adds nothing.\n\n"
+             "    p ∈ territory(c)  ⟹  playing at p changes S(c) by 0  ⟹  pass\n\n"
+             "Black's wall owns the two left columns, White's wall the two right "
+             "ones, and the three middle columns touch both colours, so they are "
+             "the only ground still worth a stone.\n\n"
+             "When nothing is left to take you pass; two passes close the game and "
+             "the board is counted. The AI plays by the same rule — it drops its "
+             "own territory from its candidate list and passes when nothing else "
+             "remains, so a good game of yours finally gets counted.",
+        setup=[(2, y, BLACK) for y in range(9)] + [(6, y, WHITE) for y in range(9)],
+        current=BLACK, markers=[], territory=True,
     ),
 ]
 

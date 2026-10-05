@@ -24,8 +24,10 @@ function st(p) { return p.state; }
   assert.strictEqual(s.turn, BLACK);
   assert.strictEqual(s.board.length, 9);
   assert.strictEqual(Object.keys(s).sort().join(","),
-    "ai_color,board,captured_by,creator,human_color,komi,last_move,level,mode,move_number,over,passes,size,turn",
+    "ai_color,board,captured_by,creator,estimate,human_color,komi,last_move,level,mode,move_number,over,passes,size,turn",
     "payload keys must match web.py: " + Object.keys(s).sort().join(","));
+  assert.ok(s.estimate && s.estimate.black_total + s.estimate.white_total - s.estimate.komi === 81,
+    "the live count must already satisfy the partition invariant");
 
   let plies = 0;
   while (!s.over && plies < 200) {
@@ -116,6 +118,24 @@ function st(p) { return p.state; }
   assert.ok(["you", "AI"].indexOf(res.winner === "Black" ? "you" : "AI") >= 0);
   console.log("  full 9x9 vs Medium AI:", guard, "rounds ->", res.winner,
     "wins by", res.margin.toFixed(1), `(B ${res.black_total} / W ${res.white_total})`);
+
+  /* ---- 6. the AI must close the game: two passes, real borders ---- */
+  const AI = globalThis.GoAI_;
+  for (const level of ["easy", "medium", "hard"]) {
+    const g = new E.Game(9, 7.5);
+    const B = new AI.GoAI(1, level), W = new AI.GoAI(-1, level);
+    let steps = 0;
+    while (!g.over && steps++ < 9 * 9 * 3) {
+      const m = await (g.current === 1 ? B : W).chooseMove(g);
+      if (m) { if (!g.play(m.x, m.y).ok) g.passMove(); } else g.passMove();
+    }
+    const s = g.finalScore();
+    assert.ok(g.over && g.passes >= 2, `${level}: the game must end on two passes (moves=${g.move_number})`);
+    assert.ok(s.black_territory + s.white_territory > 0, `${level}: borders closed but nobody holds any territory`);
+    assert.ok(s.dame <= 8, `${level}: ${s.dame} neutral points left — the game did not settle`);
+    console.log(`  ${level.padEnd(6)} closed the game on two passes after ${g.move_number} moves · ` +
+      `territory B ${s.black_territory} / W ${s.white_territory} · neutral ${s.dame}`);
+  }
 
   console.log("game_server.js: all checks passed");
 })().catch((err) => { console.error("FAILED:", err.message); process.exit(1); });

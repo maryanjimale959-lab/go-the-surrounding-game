@@ -14,7 +14,7 @@ import random
 import subprocess
 from pathlib import Path
 
-from engine import BLACK, EMPTY, WHITE, Game
+from engine import BLACK, EMPTY, WHITE, Game, fills_own_territory
 
 ROOT = Path(__file__).parent
 NODE_SCRIPT = ROOT / "tests" / "compare_engine.js"
@@ -60,6 +60,12 @@ def trace_game(size, rng, plies):
 
 
 def snapshot(g):
+    fills = {BLACK: [], WHITE: []}
+    for c in (BLACK, WHITE):
+        for x in range(g.size):
+            for y in range(g.size):
+                if fills_own_territory(g.board, g.size, x, y, c):
+                    fills[c].append([x, y])
     return {
         "board": g.board,
         "turn": g.current,
@@ -70,6 +76,8 @@ def snapshot(g):
         "over": g.over,
         "legal": sorted([[x, y] for x in range(g.size) for y in range(g.size)
                          if g.is_legal(x, y)[0]]),
+        "fill_black": fills[BLACK],
+        "fill_white": fills[WHITE],
         "score": g.final_score() if g.over else None,
     }
 
@@ -88,7 +96,8 @@ def main():
     failures = 0
     for i, (exp, got) in enumerate(zip(expected, results)):
         for field in ("board", "turn", "move_number", "passes", "captured_by",
-                      "last_move", "over", "legal", "score"):
+                      "last_move", "over", "legal", "fill_black", "fill_white",
+                      "score"):
             if exp[field] != got.get(field):
                 failures += 1
                 print(f"MISMATCH game {i} field {field}:")

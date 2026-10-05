@@ -214,10 +214,30 @@ These are the rules the engine enforces — all of them.
 
 ### 8. Ending and scoring
 * The game ends after two passes in a row, or the moment you press **Count score**.
+* **Passing is a rule, not a courtesy.** A point inside a region your own
+  stones already border is counted for you whether or not you stand on it, so
+  under area scoring it gains exactly nothing:
+
+  ```
+  p ∈ territory(c)  ⟹  S(c) unchanged when c plays at p  ⟹  c should pass
+  ```
+
+  Both AI engines implement this by dropping those points from their candidate
+  lists (`_rank_candidates` in `ai.py`, the root children in `mcts.py`, and the
+  same two places in `static/ai.js`). When a side is left with nothing
+  worthwhile it passes, which is what closes a game — otherwise the AI answers
+  forever, 20+ points stay neutral, and the count collapses to
+  *stones + half the dame + komi*, which always favours White.
 * Every empty region bordered by exactly one colour becomes that colour's
   **territory**. Regions touching both colours are **dame** (neutral points).
   A game can end while dame are still open, so they are shared out in filling
   order (Black first) rather than thrown away.
+* The side panel shows a **running count** while you play, using this same
+  formula. While more than a quarter of the board is still dame that number is
+  noise (it is half the board split down the middle plus komi), so the panel
+  reports only the ground each side has actually *enclosed*, and switches to
+  the full count — komi included, and who is ahead by how much — once the
+  borders are closing.
 * This game counts with **area scoring (Chinese rules)**:
 
   ```
@@ -324,6 +344,14 @@ formula above, and the most-visited root move is played. The search is
 **time-boxed** (3 seconds, checked inside every playout) so a 19×19 board can
 never stall the game.
 
+**Every level keeps the same endgame rule.** Candidates are filtered *before*
+they are scored: a point whose empty region is bordered only by the mover's own
+colour is already counted for the mover, so it is dropped. If that leaves no
+candidate at all, the engine returns `None` — a pass — and two passes end the
+game. (`engine.fills_own_territory()` is the same test on its own; the tests use
+it to check a single point, and it is what a *human* should be doing at the end
+of a game.)
+
 Difficulty, in one sentence: Easy and Medium are the same function with more
 score noise and a wider pick-set; Hard adds the defence ply; Master abandons
 the single-ply view for tree search.
@@ -350,7 +378,7 @@ the single-ply view for tree search.
 | Pass | Give up your turn — two passes in a row end the game |
 | Undo | Take back your move and the AI's reply |
 | Count score | End the game now and count the board (asks for confirmation) |
-| **Learn Go** | 7-lesson interactive course: liberties, capture, suicide, ko, territory, MCTS |
+| **Learn Go** | 8-lesson interactive course: liberties, capture, suicide, ko, territory, MCTS, and the endgame pass |
 | Rules & Math | The full rule set plus every equation the engine and AI use |
 
 ## Tests
@@ -364,21 +392,32 @@ node tests/game_server.test.js     # the in-browser server + all four AI levels
 `tests.py` covers: liberty counting, group merging, capture of a whole group,
 the suicide ban, the capture-that-is-not-suicide exception, super-ko rejection,
 undo, the territory flood fill, the `size²` partition invariant, the fact that
-komi can flip a board lead, a full heuristic-AI self-play game, and MCTS
+komi can flip a board lead, which single points are worth a stone and which are
+own ground (`fills_own_territory`), a full heuristic-AI self-play game, and MCTS
 legality plus a capture-sense check (the Master must take a free stone).
+
+It also checks that the AI *closes* a game: at each of the three heuristic
+levels, an AI-vs-AI game must reach two consecutive passes with real territory
+on both sides and at most 8 neutral points left. Before the endgame filter
+existed these games never ended on passes at all — 19 to 38 of the 81 points
+were still open, so the count degenerated into stones plus half the dame plus
+komi, and White won every time.
 
 `tests_js.py` plays 24 random games (with passes and undos mixed in) in Python,
 replays the exact same move lists in `static/engine.js` under Node, and diffs
-board, turn, move count, passes, prisoners, last move, the full legal-move list
-and the score breakdown. It asserts `S(B) + S(W) − komi == size²` on both
-sides. `tests/game_server.test.js` then drives `game_server.js` through the
-same JSON routes the page uses and times every AI level on 9×9 and 19×19.
+board, turn, move count, passes, prisoners, last move, the full legal-move list,
+the per-point "is this own ground" flags and the score breakdown. It asserts
+`S(B) + S(W) − komi == size²` on both sides. `tests/game_server.test.js` then
+drives `game_server.js` through the same JSON routes the page uses, times every
+AI level on 9×9 and 19×19, and repeats the two-pass closing check in JavaScript.
 
 The web front-ends were additionally verified end-to-end in a headless browser,
 twice: against `python web.py`, and against a plain static file server with no
 backend at all (the GitHub Pages case) — load, play, AI pacing, undo, pass,
 Count score, the result naming the winner, territory shading, Master on a phone
-viewport, and no console errors.
+viewport, and no console errors. A third run plays a whole game to its natural
+two-pass end and checks the side panel's running count and the "the AI has
+passed — pass too" hint.
 
 ## Project layout
 

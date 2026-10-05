@@ -127,8 +127,58 @@ def test_ai_selfplay():
     res = g.final_score()
     accounted = res["black_total"] + res["white_total"] - res["komi"]
     assert accounted == 81, accounted
+    assert g.over, "self-play should reach a real ending, not run out of iterations"
     print(f"self-play finished: Black {res['black_total']} - White {res['white_total']} "
           f"({res['winner']} wins by {res['margin']})")
+
+
+def test_fills_own_territory():
+    """The endgame rule: a move that only converts your own area into a stone
+    gains nothing under area scoring, and is when the AI should pass."""
+    from engine import fills_own_territory
+
+    board = empty_board(5)
+    for y in range(5):
+        board[2][y] = BLACK          # Black walls off columns 0-1
+    board[4][0] = WHITE
+    board[3][1] = WHITE
+    assert fills_own_territory(board, 5, 0, 0, BLACK), "Black's own area"
+    assert not fills_own_territory(board, 5, 0, 0, WHITE), "not White's ground"
+    assert not fills_own_territory(board, 5, 4, 2, BLACK), "neutral point is worth a stone"
+    assert not fills_own_territory(board, 5, 4, 2, WHITE), "nor for the other colour"
+
+    # a move that captures is never "just filling": black takes a lone white stone
+    board = empty_board(5)
+    board[1][1] = WHITE
+    board[0][1] = BLACK
+    board[2][1] = BLACK
+    board[1][0] = BLACK
+    assert not fills_own_territory(board, 5, 1, 2, BLACK), "it captures one stone"
+
+
+def test_ai_closes_the_game():
+    """Both AI levels must stop filling their own areas and let the game end on
+    two passes, with real borders — otherwise the count is decided by komi on a
+    board that never settled, and every game goes to White."""
+    for level in ("easy", "medium", "hard"):
+        g = Game(size=9)
+        ais = {BLACK: GoAI(BLACK, level), WHITE: GoAI(WHITE, level)}
+        steps = 0
+        while not g.over and steps < 9 * 9 * 3:
+            steps += 1
+            mv = ais[g.current].choose_move(g)
+            if mv is None:
+                g.pass_move()
+            else:
+                ok, info = g.play(*mv)
+                assert ok, info
+        res = g.final_score()
+        assert g.over and g.passes >= 2, f"{level}: never ended on two passes ({g.move_number} moves)"
+        assert res["black_territory"] + res["white_territory"] > 0, f"{level}: no borders closed"
+        assert res["dame"] <= 8, f"{level}: {res['dame']} neutral points left, game did not settle"
+        print(f"{level} AI closed the game on two passes after {g.move_number} moves · "
+              f"territory B {res['black_territory']} / W {res['white_territory']} · "
+              f"neutral {res['dame']} · {res['winner']} by {res['margin']}")
 
 
 def test_mcts():
@@ -158,5 +208,7 @@ if __name__ == "__main__":
     test_komi_can_flip_a_board_lead()
     test_influence_field()
     test_ai_selfplay()
+    test_fills_own_territory()
+    test_ai_closes_the_game()
     test_mcts()
     print("All tests passed.")
